@@ -204,15 +204,15 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-2xl font-bold text-right text-slate-800 tabular-nums focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white"
             />
             {/* Quick buttons */}
-            <div className="flex gap-2 mt-2 overflow-x-auto pb-1 custom-scrollbar">
-              {[200000, 500000, 1000000, 2000000, 5000000].map((amt) => (
+            <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 custom-scrollbar">
+              {[20000, 25000, 30000, 50000, 1000000, 4000000].map((amt) => (
                 <button
                   key={amt}
                   type="button"
                   onClick={() => setQuickAmount(amt)}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 whitespace-nowrap"
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold text-slate-600 whitespace-nowrap transition-colors"
                 >
-                  +{formatNumber(amt / 1000)}k
+                  +{amt >= 1000000 ? `${amt / 1000000}Tr` : `${amt / 1000}k`}
                 </button>
               ))}
             </div>

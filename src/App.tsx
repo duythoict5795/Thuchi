@@ -817,83 +817,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Chi tiết từng ví riêng biệt (YÊU CẦU: Hiển thị số dư chi tiết của từng ví riêng biệt) */}
-            <div className="bg-white rounded-3xl p-5 shadow-2xs border border-slate-100 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    Chi tiết từng ví & Tài khoản
-                  </h3>
-                  <p className="text-[11px] text-slate-400">
-                    Theo dõi số dư và tỷ lệ phân bổ tài sản
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsTransferModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition-colors"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5" />
-                  <span>Chuyển tiền</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {state.wallets.map((wallet) => {
-                  const bal = calculateWalletBalance(wallet.id, state.wallets, state.transactions);
-                  const share =
-                    totalBalance > 0 ? ((bal / totalBalance) * 100).toFixed(1) : '0';
-
-                  return (
-                    <div
-                      key={wallet.id}
-                      onClick={() => setSelectedWalletId(wallet.id)}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group ${
-                        selectedWalletId === wallet.id
-                          ? 'border-indigo-500 bg-indigo-50/40 shadow-xs'
-                          : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 hover:border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-2xs"
-                          style={{ backgroundColor: wallet.color }}
-                        >
-                          <WalletIcon icon={wallet.icon} className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-slate-800">{wallet.name}</span>
-                            <span className="text-[10px] font-semibold text-slate-400">
-                              {share}%
-                            </span>
-                          </div>
-                          <p className="text-xs font-bold text-slate-900 tabular-nums mt-0.5">
-                            {formatVND(bal)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setQuickType('transfer');
-                            setQuickWalletId(wallet.id);
-                            setIsTransferModalOpen(true);
-                          }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-white transition-colors"
-                          title="Chuyển tiền từ ví này"
-                        >
-                          <ArrowRightLeft className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* FORM GIAO DỊCH MỚI */}
             <div className="bg-white rounded-3xl p-5 shadow-2xs border border-slate-100 space-y-4">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
@@ -1056,7 +979,7 @@ export default function App() {
                   />
                   {/* Quick Amount Suggestion Chips */}
                   <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 custom-scrollbar">
-                    {[50000, 100000, 200000, 500000, 1000000, 2000000].map((amt) => (
+                    {[20000, 25000, 30000, 50000, 1000000, 4000000].map((amt) => (
                       <button
                         key={amt}
                         type="button"

@@ -138,6 +138,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xl font-bold text-right text-slate-800 tabular-nums focus:ring-2 focus:ring-indigo-500"
               required
             />
+            {/* Quick Amount Suggestion Chips */}
+            <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 custom-scrollbar">
+              {[20000, 25000, 30000, 50000, 1000000, 4000000].map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setAmountDisplay(formatNumber(amt))}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold text-slate-600 whitespace-nowrap transition-colors"
+                >
+                  +{amt >= 1000000 ? `${amt / 1000000}Tr` : `${amt / 1000}k`}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Wallets */}
