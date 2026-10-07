@@ -9,8 +9,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // https://vitejs.dev/config/
 export default defineConfig(() => {
   return {
-    // Hỗ trợ deploy GitHub Pages và chạy mượt trên cả AI Studio / local
-    base: process.env.BASE_PATH || (process.env.GITHUB_ACTIONS ? '/QuangVuThaoPro/' : './'),
+    // Base relative './' giúp chạy hoàn hảo trên mọi tên repo GitHub Pages (/Thuchi/, etc.) và AI Studio
+    base: './',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
