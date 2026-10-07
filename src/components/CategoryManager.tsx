@@ -1,18 +1,28 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, FolderPlus, Copy, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, FolderPlus, Copy, Check, X } from 'lucide-react';
 import { Wallet, ExpenseGroup } from '../types/finance';
 import { WalletIcon } from './WalletIcon';
 
 interface CategoryManagerProps {
   wallets: Wallet[];
   onUpdateWallet: (updatedWallet: Wallet) => void;
+  activeWalletId?: string;
+  onClose?: () => void;
 }
 
 export const CategoryManager: React.FC<CategoryManagerProps> = ({
   wallets,
   onUpdateWallet,
+  activeWalletId,
+  onClose,
 }) => {
-  const [selectedWalletId, setSelectedWalletId] = useState<string>(wallets[0]?.id || '');
+  const [selectedWalletId, setSelectedWalletId] = useState<string>(activeWalletId || wallets[0]?.id || '');
+
+  useEffect(() => {
+    if (activeWalletId) {
+      setSelectedWalletId(activeWalletId);
+    }
+  }, [activeWalletId]);
   
   // Modals for adding income cat, group, category to group
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
@@ -205,19 +215,33 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
           </div>
         </div>
 
-        {wallets.length > 1 && (
-          <button
-            onClick={() => {
-              const other = wallets.find((w) => w.id !== activeWallet.id);
-              setCopySourceWalletId(other ? other.id : '');
-              setIsCopyModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-[11px] font-semibold transition-colors"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            <span>Sao chép mẫu</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {wallets.length > 1 && (
+            <button
+              onClick={() => {
+                const other = wallets.find((w) => w.id !== activeWallet.id);
+                setCopySourceWalletId(other ? other.id : '');
+                setIsCopyModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-[11px] font-semibold transition-colors"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Sao chép mẫu</span>
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl text-[11px] font-semibold transition-colors"
+              title="Đóng tùy chỉnh danh mục"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Đóng</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* SECTION 1: Income Categories */}

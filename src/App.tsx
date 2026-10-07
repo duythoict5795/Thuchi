@@ -25,7 +25,6 @@ import {
   Layers,
   ArrowUpRight,
   ArrowDownLeft,
-  Sparkles,
   RefreshCw,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -94,6 +93,12 @@ export default function App() {
     groupName: string;
     transactions: Transaction[];
   } | null>(null);
+
+  // Home: Toggle wallet picker visibility (bình thường ẩn, nhấn vào số tiền mới hiện ra)
+  const [isWalletPickerOpen, setIsWalletPickerOpen] = useState(false);
+
+  // Settings: Selected wallet to edit categories (bình thường ẩn Ảnh 3, khi nhấn vào ví mới hiện ra)
+  const [selectedSettingsWalletId, setSelectedSettingsWalletId] = useState<string | null>(null);
 
   // Floating Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -171,7 +176,6 @@ export default function App() {
         ...prev,
         wallets: prev.wallets.map((w) => (w.id === walletData.id ? ({ ...w, ...walletData } as Wallet) : w)),
       }));
-      showToast('Đã cập nhật thông tin ví!');
     } else {
       const newWallet = walletData as Wallet;
       setState((prev) => ({
@@ -179,7 +183,6 @@ export default function App() {
         wallets: [...prev.wallets, newWallet],
       }));
       setSelectedWalletId(newWallet.id);
-      showToast(`Đã tạo ví mới "${newWallet.name}"!`);
     }
   };
 
@@ -213,6 +216,9 @@ export default function App() {
 
     if (selectedWalletId === walletId) {
       setSelectedWalletId('all');
+    }
+    if (selectedSettingsWalletId === walletId) {
+      setSelectedSettingsWalletId(null);
     }
     showToast(`Đã xóa ví "${wallet.name}"!`);
   };
@@ -255,7 +261,6 @@ export default function App() {
         ...prev,
         transactions: [newTx, ...prev.transactions],
       }));
-      showToast(`Đã chuyển ${formatVND(amount)} từ ${fromW?.name} sang ${toW?.name}!`);
     } else {
       const newTx: Transaction = {
         id: `t-${Date.now()}`,
@@ -272,9 +277,6 @@ export default function App() {
         ...prev,
         transactions: [newTx, ...prev.transactions],
       }));
-      showToast(
-        `Đã lưu giao dịch ${quickType === 'income' ? 'thu nhập' : 'chi tiêu'} ${formatVND(amount)}!`
-      );
     }
 
     setQuickAmountDisplay('');
@@ -286,7 +288,6 @@ export default function App() {
       ...prev,
       transactions: prev.transactions.map((t) => (t.id === updatedTx.id ? updatedTx : t)),
     }));
-    showToast('Đã lưu thay đổi giao dịch!');
   };
 
   const handleDeleteTransaction = (txId: string) => {
@@ -295,7 +296,6 @@ export default function App() {
       ...prev,
       transactions: prev.transactions.filter((t) => t.id !== txId),
     }));
-    showToast('Đã xóa giao dịch thành công!');
   };
 
   const handleExecuteTransfer = (transferData: Omit<Transaction, 'id' | 'createdAt'>) => {
@@ -308,7 +308,6 @@ export default function App() {
       ...prev,
       transactions: [newTx, ...prev.transactions],
     }));
-    showToast(`Chuyển ${formatVND(transferData.amount)} giữa 2 ví thành công!`);
   };
 
   // ----------------------------------------------------
@@ -324,7 +323,6 @@ export default function App() {
     a.download = `quan_ly_thu_chi_backup_${getTodayDateString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Đã xuất file sao lưu dữ liệu!');
   };
 
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -337,7 +335,7 @@ export default function App() {
         const parsed = JSON.parse(event.target?.result as string);
         if (parsed.wallets && Array.isArray(parsed.wallets)) {
           setState(parsed);
-          showToast('Khôi phục dữ liệu từ file thành công!');
+          alert('Khôi phục dữ liệu thành công!');
         } else {
           alert('Tệp dữ liệu không hợp lệ!');
         }
@@ -349,10 +347,9 @@ export default function App() {
   };
 
   const handleResetData = () => {
-    if (confirm('Bạn có chắc muốn đặt lại toàn bộ dữ liệu về mặc định ban đầu?')) {
+    if (confirm('Bạn có chắc muốn đặt lại toàn bộ dữ liệu về mặc định ban đầu? Tất cả giao dịch sẽ bị xóa.')) {
       setState(DEFAULT_STATE);
       setSelectedWalletId('all');
-      showToast('Đã khôi phục dữ liệu mẫu ban đầu!');
     }
   };
 
@@ -604,18 +601,10 @@ export default function App() {
       {/* ----------------- TOP APP BAR ----------------- */}
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 shadow-2xs">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-xs">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-slate-900 tracking-tight leading-none">
-                Quản Lý Thu Chi
-              </h1>
-              <span className="text-[10px] font-semibold text-indigo-600">
-                Hệ Thống Đa Ví Thông Minh
-              </span>
-            </div>
+          <div>
+            <h1 className="text-base font-bold text-slate-900 tracking-tight">
+              Quản Lý Thu Chi
+            </h1>
           </div>
 
           <div className="flex items-center gap-2">
@@ -633,16 +622,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Floating Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
-          <div className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xl text-xs font-bold border border-slate-700/60">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>{toastMessage}</span>
-          </div>
-        </div>
-      )}
-
       {/* ----------------- MAIN CONTENT CONTAINER ----------------- */}
       <main className="max-w-2xl mx-auto px-4 py-5 space-y-6">
         {/* ======================================================== */}
@@ -650,90 +629,7 @@ export default function App() {
         {/* ======================================================== */}
         {activeTab === 'home' && (
           <div className="space-y-6 animate-in fade-in duration-150">
-            {/* Quick Wallet Switcher Carousel */}
-            <div>
-              <div className="flex items-center justify-between mb-2 px-1">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Chọn ví xem số dư
-                </span>
-                <button
-                  onClick={() => {
-                    setWalletToEdit(null);
-                    setIsWalletModalOpen(true);
-                  }}
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Thêm ví mới</span>
-                </button>
-              </div>
-
-              {/* Horizontal Scroll of Wallets */}
-              <div className="flex gap-2.5 overflow-x-auto pb-2 custom-scrollbar">
-                {/* All Wallets / Ví Tổng Hợp */}
-                <button
-                  onClick={() => setSelectedWalletId('all')}
-                  className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl transition-all flex-shrink-0 border ${
-                    selectedWalletId === 'all'
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/10'
-                      : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 shadow-2xs'
-                  }`}
-                >
-                  <div
-                    className={`w-7 h-7 rounded-xl flex items-center justify-center ${
-                      selectedWalletId === 'all'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-indigo-50 text-indigo-600'
-                    }`}
-                  >
-                    <Layers className="w-4 h-4" />
-                  </div>
-                  <div className="text-left">
-                    <p className="text-xs font-bold leading-tight">Ví Tổng Hợp</p>
-                    <p
-                      className={`text-[10px] font-medium tabular-nums ${
-                        selectedWalletId === 'all' ? 'text-slate-300' : 'text-slate-500'
-                      }`}
-                    >
-                      {formatVND(totalBalance)}
-                    </p>
-                  </div>
-                </button>
-
-                {/* Individual Wallets */}
-                {state.wallets.map((wallet) => {
-                  const isSelected = selectedWalletId === wallet.id;
-                  const bal = calculateWalletBalance(wallet.id, state.wallets, state.transactions);
-
-                  return (
-                    <button
-                      key={wallet.id}
-                      onClick={() => setSelectedWalletId(wallet.id)}
-                      className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl transition-all flex-shrink-0 border ${
-                        isSelected
-                          ? 'bg-white text-slate-900 border-slate-900 shadow-md ring-2 ring-slate-900/10'
-                          : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 shadow-2xs'
-                      }`}
-                    >
-                      <div
-                        className="w-7 h-7 rounded-xl flex items-center justify-center text-white shadow-2xs"
-                        style={{ backgroundColor: wallet.color }}
-                      >
-                        <WalletIcon icon={wallet.icon} className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-xs font-bold leading-tight">{wallet.name}</p>
-                        <p className="text-[10px] font-medium text-slate-500 tabular-nums">
-                          {formatVND(bal)}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Main Balance Hero Card */}
+            {/* Main Balance Hero Card (Nhấn vào số tiền để đổi ví) */}
             <div
               className={`rounded-3xl p-6 text-white shadow-xl transition-all duration-300 ${
                 selectedWalletId === 'all'
@@ -742,13 +638,22 @@ export default function App() {
               }`}
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <div
+                  onClick={() => setIsWalletPickerOpen(!isWalletPickerOpen)}
+                  className="flex items-center gap-2 cursor-pointer group py-0.5 pr-2 rounded-lg hover:bg-white/10 transition-colors"
+                  title="Nhấn để đổi ví"
+                >
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <p className="text-white/80 text-xs font-medium tracking-wide">
+                  <p className="text-white/90 text-xs font-semibold tracking-wide">
                     {selectedWalletId === 'all'
                       ? 'Tổng tài sản khả dụng (Tất cả ví)'
                       : `Số dư ví: ${activeWallet?.name}`}
                   </p>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-white/70 transition-transform duration-200 ${
+                      isWalletPickerOpen ? 'rotate-180 text-white' : 'group-hover:translate-y-0.5'
+                    }`}
+                  />
                 </div>
 
                 {selectedWalletId !== 'all' && activeWallet && (
@@ -765,10 +670,19 @@ export default function App() {
                 )}
               </div>
 
-              {/* Huge Balance Figure */}
-              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-2 tabular-nums">
-                {formatVND(activeBalance)}
-              </h2>
+              {/* Huge Balance Figure (Nhấn vào số tiền để mở chọn ví) */}
+              <div
+                onClick={() => setIsWalletPickerOpen(!isWalletPickerOpen)}
+                className="cursor-pointer group select-none mt-2 inline-flex items-baseline gap-2.5"
+                title="Nhấn vào số tiền để đổi ví"
+              >
+                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight tabular-nums group-hover:scale-[1.01] transition-transform">
+                  {formatVND(activeBalance)}
+                </h2>
+                <span className="text-[10px] text-white/80 font-bold bg-white/20 px-2 py-0.5 rounded-lg group-hover:bg-white/30 transition-colors">
+                  {isWalletPickerOpen ? 'Đóng ▴' : 'Đổi ví ▾'}
+                </span>
+              </div>
 
               {/* Monthly Flow Sub-metrics */}
               <div className="grid grid-cols-3 gap-2 mt-6 pt-5 border-t border-white/15">
@@ -803,6 +717,105 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* Quick Wallet Switcher Carousel (Bình thường ẩn, nhấn vào số tiền ở Hero Card mới hiện ra) */}
+            {isWalletPickerOpen && (
+              <div className="bg-white rounded-3xl p-4 shadow-sm border border-indigo-100 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Chọn ví xem số dư
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setWalletToEdit(null);
+                        setIsWalletModalOpen(true);
+                      }}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Thêm ví mới</span>
+                    </button>
+                    <button
+                      onClick={() => setIsWalletPickerOpen(false)}
+                      className="text-[11px] font-bold text-slate-400 hover:text-slate-600 px-2 py-0.5 rounded-lg hover:bg-slate-100 transition-colors"
+                    >
+                      ✕ Đóng
+                    </button>
+                  </div>
+                </div>
+
+                {/* Horizontal Scroll of Wallets */}
+                <div className="flex gap-2.5 overflow-x-auto pb-1 custom-scrollbar">
+                  {/* All Wallets / Ví Tổng Hợp */}
+                  <button
+                    onClick={() => {
+                      setSelectedWalletId('all');
+                      setIsWalletPickerOpen(false);
+                    }}
+                    className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl transition-all flex-shrink-0 border ${
+                      selectedWalletId === 'all'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/10'
+                        : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 shadow-2xs'
+                    }`}
+                  >
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center ${
+                        selectedWalletId === 'all'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-indigo-50 text-indigo-600'
+                      }`}
+                    >
+                      <Layers className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs font-bold leading-tight">Ví Tổng Hợp</p>
+                      <p
+                        className={`text-[10px] font-medium tabular-nums ${
+                          selectedWalletId === 'all' ? 'text-slate-300' : 'text-slate-500'
+                        }`}
+                      >
+                        {formatVND(totalBalance)}
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Individual Wallets */}
+                  {state.wallets.map((wallet) => {
+                    const isSelected = selectedWalletId === wallet.id;
+                    const bal = calculateWalletBalance(wallet.id, state.wallets, state.transactions);
+
+                    return (
+                      <button
+                        key={wallet.id}
+                        onClick={() => {
+                          setSelectedWalletId(wallet.id);
+                          setIsWalletPickerOpen(false);
+                        }}
+                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl transition-all flex-shrink-0 border ${
+                          isSelected
+                            ? 'bg-white text-slate-900 border-slate-900 shadow-md ring-2 ring-slate-900/10'
+                            : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 shadow-2xs'
+                        }`}
+                      >
+                        <div
+                          className="w-7 h-7 rounded-xl flex items-center justify-center text-white shadow-2xs"
+                          style={{ backgroundColor: wallet.color }}
+                        >
+                          <WalletIcon icon={wallet.icon} className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-xs font-bold leading-tight">{wallet.name}</p>
+                          <p className="text-[10px] font-medium text-slate-500 tabular-nums">
+                            {formatVND(bal)}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Chi tiết từng ví riêng biệt (YÊU CẦU: Hiển thị số dư chi tiết của từng ví riêng biệt) */}
             <div className="bg-white rounded-3xl p-5 shadow-2xs border border-slate-100 space-y-4">
@@ -1621,51 +1634,78 @@ export default function App() {
               <div className="space-y-3">
                 {state.wallets.map((w) => {
                   const bal = calculateWalletBalance(w.id, state.wallets, state.transactions);
+                  const isSelected = selectedSettingsWalletId === w.id;
+
                   return (
                     <div
                       key={w.id}
-                      className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between"
+                      className={`p-4 rounded-2xl border transition-all ${
+                        isSelected
+                          ? 'bg-indigo-50/50 border-indigo-300 shadow-xs'
+                          : 'bg-slate-50 border-slate-100 hover:border-slate-200'
+                      }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-between">
                         <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-2xs"
-                          style={{ backgroundColor: w.color }}
+                          onClick={() => setSelectedSettingsWalletId(isSelected ? null : w.id)}
+                          className="flex items-center gap-3 cursor-pointer flex-1 select-none"
+                          title="Nhấn để mở tùy chỉnh danh mục của ví này"
                         >
-                          <WalletIcon icon={w.icon} className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-900">{w.name}</span>
-                            <span className="text-[10px] text-slate-400 font-medium">
-                              {w.expenseGroups.length} nhóm chi
-                            </span>
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-2xs"
+                            style={{ backgroundColor: w.color }}
+                          >
+                            <WalletIcon icon={w.icon} className="w-5 h-5" />
                           </div>
-                          <p className="text-xs font-bold text-indigo-700 tabular-nums mt-0.5">
-                            Hiện có: {formatVND(bal)}
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            Số dư ban đầu: {formatVND(w.initialBalance)}
-                          </p>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-900">{w.name}</span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {w.expenseGroups.length} nhóm chi
+                              </span>
+                              {isSelected && (
+                                <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                                  Đang mở danh mục ▾
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs font-bold text-indigo-700 tabular-nums mt-0.5">
+                              Hiện có: {formatVND(bal)}
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              Số dư ban đầu: {formatVND(w.initialBalance)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setWalletToEdit(w);
-                            setIsWalletModalOpen(true);
-                          }}
-                          className="px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:text-indigo-600 text-xs font-bold rounded-xl transition-colors"
-                        >
-                          Sửa
-                        </button>
-                        <button
-                          onClick={() => handleDeleteWallet(w.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
-                          title="Xóa ví"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setSelectedSettingsWalletId(isSelected ? null : w.id)}
+                            className={`px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-colors ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                : 'bg-white border-slate-200 text-slate-700 hover:text-indigo-600 hover:border-indigo-300'
+                            }`}
+                          >
+                            {isSelected ? 'Thu gọn' : 'Tùy chỉnh danh mục'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setWalletToEdit(w);
+                              setIsWalletModalOpen(true);
+                            }}
+                            className="px-2 py-1.5 bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 text-xs font-bold rounded-xl transition-colors"
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            onClick={() => handleDeleteWallet(w.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                            title="Xóa ví"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1673,25 +1713,40 @@ export default function App() {
               </div>
             </div>
 
-            {/* SECTION 2: Tùy chỉnh danh mục độc lập theo từng ví */}
-            <div className="bg-white rounded-3xl p-5 shadow-2xs border border-slate-100 space-y-4">
-              <div className="border-b border-slate-100 pb-3">
-                <h3 className="text-base font-bold text-slate-800">Tùy Chỉnh Danh Mục Theo Ví</h3>
-                <p className="text-xs text-slate-500">
-                  Mỗi ví có danh mục độc lập giúp quản lý ngân sách hiệu quả cho từng mục đích
-                </p>
-              </div>
+            {/* SECTION 2: Tùy chỉnh danh mục độc lập theo từng ví (Bình thường ẩn, nhấn vào ví mới hiện ra) */}
+            {selectedSettingsWalletId && (
+              <div className="bg-white rounded-3xl p-5 shadow-2xs border border-indigo-100 space-y-4 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">
+                      Tùy Chỉnh Danh Mục ({state.wallets.find((w) => w.id === selectedSettingsWalletId)?.name})
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Mỗi ví có danh mục độc lập giúp quản lý ngân sách hiệu quả cho từng mục đích
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedSettingsWalletId(null)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Thu gọn</span>
+                  </button>
+                </div>
 
-              <CategoryManager
-                wallets={state.wallets}
-                onUpdateWallet={(updated) => {
-                  setState((prev) => ({
-                    ...prev,
-                    wallets: prev.wallets.map((w) => (w.id === updated.id ? updated : w)),
-                  }));
-                }}
-              />
-            </div>
+                <CategoryManager
+                  wallets={state.wallets}
+                  activeWalletId={selectedSettingsWalletId}
+                  onClose={() => setSelectedSettingsWalletId(null)}
+                  onUpdateWallet={(updated) => {
+                    setState((prev) => ({
+                      ...prev,
+                      wallets: prev.wallets.map((w) => (w.id === updated.id ? updated : w)),
+                    }));
+                  }}
+                />
+              </div>
+            )}
 
             {/* SECTION 3: Quản lý Dữ liệu (Sao lưu & Khôi phục) */}
             <div className="bg-white rounded-3xl p-5 shadow-2xs border border-slate-100 space-y-4">
