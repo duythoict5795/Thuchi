@@ -1,0 +1,6 @@
+{
+  "name": "Quản Lý Thu Chi Pro",
+  "description": "Ứng dụng quản lý thu chi cá nhân đa ví, hỗ trợ chuyển tiền giữa các ví, so sánh tỷ trọng chi tiêu và quản lý danh mục ngân sách độc lập theo từng ví.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
