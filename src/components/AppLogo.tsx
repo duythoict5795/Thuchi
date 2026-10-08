@@ -72,19 +72,9 @@ export function AppLogo({ size = 'md', showText = true, className = '' }: AppLog
     <div className={`flex items-center gap-2.5 ${className}`}>
       <AppLogoIcon size={size} />
       {showText && (
-        <div className="flex flex-col">
-          <div className="flex items-center gap-1.5">
-            <span className="text-base font-extrabold text-slate-900 tracking-tight leading-tight">
-              Quản Lý Thu Chi
-            </span>
-            <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-2xs">
-              PRO
-            </span>
-          </div>
-          <span className="text-[10px] font-medium text-slate-600 tracking-wide">
-            Tài chính đa ví thông minh
-          </span>
-        </div>
+        <span className="text-base font-extrabold text-slate-900 tracking-tight leading-tight">
+          Quản Lý Thu Chi
+        </span>
       )}
     </div>
   );

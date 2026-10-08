@@ -1971,18 +1971,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
-              <div className="text-xs text-slate-600 leading-relaxed bg-white/80 rounded-2xl p-3 border border-indigo-50 space-y-1">
-                <p>• Dữ liệu tải tức thì và không bị giật lag khi chuyển đổi ví.</p>
-                <p>• Đồng bộ 2 lớp: Lưu cục bộ siêu tốc (IndexedDB) và sao lưu đám mây an toàn (Firestore).</p>
-                <p>• Hoạt động mượt mà cả khi offline hoặc mạng yếu.</p>
-              </div>
-
-              {/* App Brand Logo Footer */}
-              <div className="pt-3 border-t border-indigo-100/60 flex items-center justify-between">
-                <AppLogo size="sm" showText={true} />
-                <span className="text-[10px] font-bold text-slate-600">v3.5.0 Cloud Pro</span>
-              </div>
             </div>
           </div>
         )}
