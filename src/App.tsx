@@ -67,6 +67,7 @@ import {
   syncStateToFirestore,
   loadStateFromFirestore,
   subscribeCloudStatus,
+  subscribeAuthError,
   loginWithGoogle,
   logoutGoogle,
   parseAuthError,
@@ -109,6 +110,12 @@ export default function App() {
       setCloudStatus(status);
     });
 
+    const unsubAuthErr = subscribeAuthError((errDetails) => {
+      setAuthErrorDetails(errDetails);
+      setIsAuthHelpModalOpen(true);
+      setCloudSyncFeedback(`Lỗi: ${errDetails.title}`);
+    });
+
     initFirebaseService().then(async () => {
       try {
         const cloudData = await loadStateFromFirestore();
@@ -137,6 +144,7 @@ export default function App() {
 
     return () => {
       unsub();
+      unsubAuthErr();
     };
   }, []);
 
@@ -186,8 +194,23 @@ export default function App() {
     setTimeout(() => setCloudSyncFeedback(null), 3500);
   };
 
-  // Active navigation tab
-  const [activeTab, setActiveTab] = useState<'home' | 'analysis' | 'history' | 'settings'>('home');
+  // Active navigation tab (ghi nhớ tab cuối cùng, không bị reset về trang chủ khi tải lại)
+  const [activeTab, setActiveTabState] = useState<'home' | 'analysis' | 'history' | 'settings'>(() => {
+    try {
+      const saved = localStorage.getItem('qunlthuchi_active_tab');
+      if (saved === 'settings' || saved === 'analysis' || saved === 'history' || saved === 'home') {
+        return saved;
+      }
+    } catch {}
+    return 'home';
+  });
+
+  const setActiveTab = (tab: 'home' | 'analysis' | 'history' | 'settings') => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem('qunlthuchi_active_tab', tab);
+    } catch {}
+  };
 
   // Currently selected wallet in UI: Mặc định hiển thị ví Tiền mặt
   const [selectedWalletId, setSelectedWalletId] = useState<string>(() => {

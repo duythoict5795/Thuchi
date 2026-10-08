@@ -114,6 +114,21 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
+// Track redirect error for surfacing in UI
+export let lastRedirectError: any = null;
+type AuthErrorListener = (errDetails: AuthErrorDetails) => void;
+const authErrorListeners = new Set<AuthErrorListener>();
+
+export function subscribeAuthError(listener: AuthErrorListener): () => void {
+  authErrorListeners.add(listener);
+  if (lastRedirectError) {
+    listener(parseAuthError(lastRedirectError));
+  }
+  return () => {
+    authErrorListeners.delete(listener);
+  };
+}
+
 // Setup Auth state listener and handle redirect login results (for Safari / iOS PWA)
 let authInitializedPromise: Promise<User | null> | null = null;
 export function initFirebaseService(): Promise<User | null> {
@@ -129,7 +144,16 @@ export function initFirebaseService(): Promise<User | null> {
         notifyStatus();
       }
     } catch (redirectErr: any) {
-      console.warn('Firebase redirect result warning:', redirectErr);
+      console.error('Firebase redirect result error:', redirectErr);
+      lastRedirectError = redirectErr;
+      const parsed = parseAuthError(redirectErr);
+      authErrorListeners.forEach((fn) => {
+        try {
+          fn(parsed);
+        } catch (e) {
+          console.error(e);
+        }
+      });
     }
 
     // 2. Listen to continuous auth state
@@ -171,13 +195,13 @@ export function parseAuthError(err: any): AuthErrorDetails {
     return {
       code,
       originalMessage: rawMessage,
-      title: 'Tên miền chưa được cấp phép trong Firebase',
-      explanation: `Tên miền hiện tại "${currentHostname}" chưa được thêm vào Danh sách miền được ủy quyền (Authorized domains) của dự án Firebase (${projectId}). Khi mở trên GitHub Pages hoặc tên miền riêng, Firebase sẽ chặn đăng nhập Google cho đến khi bạn thêm tên miền này vào.`,
+      title: 'Tên miền chưa được cấp phép trong Firebase (Authorized Domain)',
+      explanation: `Tên miền hiện tại "${currentHostname}" chưa được thêm vào Danh sách miền được ủy quyền (Authorized domains) của dự án Firebase (${projectId}).\n\n📌 Đây là lý do vì sao khi mở bên trong AI Studio (tên miền *.run.app) thì đăng nhập được, nhưng khi mở trên Safari/GitHub Pages (${currentHostname}) thì tài khoản không được lưu và tự nhảy về trang chủ!`,
       solutionSteps: [
-        `Truy cập Firebase Console mục Authentication > Settings của dự án.`,
-        `Tại phần "Authorized domains" (Miền được ủy quyền), bấm "Add domain".`,
-        `Dán tên miền: ${currentHostname} rồi bấm Save (Lưu).`,
-        `Quay lại trang này và bấm nút Đăng nhập Google lại.`,
+        `Nhấn vào nút "Mở Cài đặt Firebase Console" bên dưới.`,
+        `Tại trang Firebase Console > Authentication > Settings > mục "Authorized domains" (Miền được ủy quyền).`,
+        `Nhấn "Add domain" (Thêm miền) và dán tên miền: ${currentHostname}`,
+        `Nhấn "Save" (Lưu) rồi quay lại trang này và bấm Đăng nhập Google lại.`,
       ],
       link: {
         label: 'Mở Cài đặt Firebase Console Authorized Domains',
@@ -193,9 +217,9 @@ export function parseAuthError(err: any): AuthErrorDetails {
       title: 'Safari đã chặn Cửa sổ Pop-up đăng nhập',
       explanation: 'Trình duyệt Safari trên iPhone/iPad hoặc Mac theo mặc định sẽ chặn các cửa sổ pop-up tự mở khi đăng nhập tài khoản Google.',
       solutionSteps: [
-        'Cách 1 (Khuyên dùng): Trên iPhone/iPad vào Cài đặt máy > Safari > Tắt mục "Chặn cửa sổ bật lên" (Block Pop-ups).',
-        'Cách 2: Trong Cài đặt > Safari > Tắt mục "Ngăn chặn theo dõi qua trang web" (Prevent Cross-Site Tracking).',
-        'Cách 3: Sử dụng nút "Thử Đăng nhập Chuyển hướng" bên dưới để chuyển thẳng sang trang Google thay vì mở popup.',
+        'Trên iPhone/iPad vào Cài đặt máy (Settings) > Safari > Tắt mục "Chặn cửa sổ bật lên" (Block Pop-ups).',
+        'Vào Cài đặt > Safari > Tắt mục "Ngăn chặn theo dõi qua trang web" (Prevent Cross-Site Tracking).',
+        'Sau khi tắt, quay lại trang này bấm nút "Đăng nhập Google" lại.',
       ],
       isSafariSpecific: true,
     };
@@ -226,31 +250,33 @@ export function parseAuthError(err: any): AuthErrorDetails {
     code,
     originalMessage: rawMessage,
     title: 'Không thể đăng nhập tài khoản Google',
-    explanation: 'Quá trình đăng nhập qua Google gặp sự cố trên trình duyệt. Có thể do Safari chặn cookie bên thứ 3 hoặc lỗi mạng.',
+    explanation: 'Quá trình đăng nhập qua Google gặp sự cố trên trình duyệt. Có thể do Safari chặn cookie bên thứ 3 hoặc tên miền chưa được cấp phép trong Firebase.',
     solutionSteps: [
-      'Nếu đang dùng Safari: Vào Cài đặt > Safari > Tắt "Ngăn chặn theo dõi trên mọi trang web" (Prevent Cross-Site Tracking).',
-      'Đảm bảo kết nối internet đang hoạt động bình thường.',
+      'Đảm bảo tên miền đã được thêm vào Authorized domains trong Firebase Console.',
+      'Nếu dùng Safari trên iPhone: Vào Cài đặt > Safari > Tắt "Ngăn chặn theo dõi trên mọi trang web".',
       'Ứng dụng vẫn tự động đồng bộ đám mây và lưu trữ ngoại tuyến an toàn mà không cần tài khoản.',
     ],
     isSafariSpecific: true,
   };
 }
 
-// Google Login with Safari and iOS PWA compatibility
+// Google Login: Ưu tiên signInWithPopup vì hoạt động tức thì, không bị mất tab hay reload trang
 export async function loginWithGoogle(forceRedirect = false): Promise<User | null> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  const isStandalone = typeof window !== 'undefined' &&
-    ((window.navigator as any).standalone === true || window.matchMedia?.('(display-mode: standalone)').matches);
   const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
 
-  // On iOS standalone PWA or explicit redirect request, use signInWithRedirect (if not in iframe)
-  if ((forceRedirect || isStandalone) && !isInIframe) {
+  // Nếu người dùng chủ động chọn thử chuyển hướng (Redirect) và không ở trong iframe
+  if (forceRedirect && !isInIframe) {
+    try {
+      localStorage.setItem('qunlthuchi_active_tab', 'settings');
+    } catch {}
     await signInWithRedirect(auth, provider);
     return null;
   }
 
+  // Luôn ưu tiên signInWithPopup trước vì popup hoạt động tốt và không bị reload trang
   try {
     const result = await signInWithPopup(auth, provider);
     currentUser = result.user;
@@ -259,12 +285,6 @@ export async function loginWithGoogle(forceRedirect = false): Promise<User | nul
     return result.user;
   } catch (err: any) {
     console.error('Google login error:', err);
-    // If popup was blocked in Safari and not in an iframe, attempt transparent redirect
-    if ((err?.code === 'auth/popup-blocked' || err?.code === 'auth/cancelled-popup-request') && !isInIframe) {
-      console.log('Falling back to signInWithRedirect due to popup-blocked...');
-      await signInWithRedirect(auth, provider);
-      return null;
-    }
     throw err;
   }
 }
