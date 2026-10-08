@@ -60,6 +60,7 @@ import { CategoryManager } from './components/CategoryManager';
 import { getWalletGradient } from './utils/gradients';
 import { AppLogo } from './components/AppLogo';
 import { ConfirmModal } from './components/ConfirmModal';
+import { AuthHelpModal } from './components/AuthHelpModal';
 import { loadAppStateFromDB } from './utils/db';
 import {
   initFirebaseService,
@@ -68,6 +69,8 @@ import {
   subscribeCloudStatus,
   loginWithGoogle,
   logoutGoogle,
+  parseAuthError,
+  AuthErrorDetails,
   CloudStatusPayload,
 } from './services/firebase';
 
@@ -155,22 +158,25 @@ export default function App() {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (forceRedirect = false) => {
     setIsGoogleLoggingIn(true);
     setCloudSyncFeedback(null);
     try {
-      const user = await loginWithGoogle();
+      const user = await loginWithGoogle(forceRedirect);
       if (user) {
         setCloudSyncFeedback(`Đã kết nối tài khoản: ${user.displayName || user.email}`);
         await syncStateToFirestore(state);
       }
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user') {
-        setCloudSyncFeedback('Đăng nhập Google không thành công. Vui lòng thử lại.');
+        const details = parseAuthError(err);
+        setAuthErrorDetails(details);
+        setIsAuthHelpModalOpen(true);
+        setCloudSyncFeedback(`Lỗi đăng nhập: ${details.title}`);
       }
     } finally {
       setIsGoogleLoggingIn(false);
-      setTimeout(() => setCloudSyncFeedback(null), 3500);
+      setTimeout(() => setCloudSyncFeedback(null), 4000);
     }
   };
 
@@ -234,6 +240,10 @@ export default function App() {
 
   // Floating Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Auth Error Details Modal (e.g. Safari popup blocked, GitHub Pages unauthorized domain)
+  const [authErrorDetails, setAuthErrorDetails] = useState<AuthErrorDetails | null>(null);
+  const [isAuthHelpModalOpen, setIsAuthHelpModalOpen] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -520,40 +530,49 @@ export default function App() {
     e.target.value = '';
   };
 
-  const handleResetData = () => {
+  // Gom 2 nút thành 1: Xóa toàn bộ dữ liệu, chỉ giữ lại 1 ví trống 0đ và đồng bộ sạch lên CSDL
+  const handleWipeAndResetCleanData = () => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Đặt lại dữ liệu mặc định',
-      message: 'Toàn bộ ví và dữ liệu thu chi sẽ được đưa về mẫu dữ liệu mặc định ban đầu. Bạn có chắc chắn muốn thực hiện?',
-      confirmText: 'Đặt lại mặc định',
+      title: 'Xóa toàn bộ dữ liệu & Đặt lại 1 ví trống',
+      message: 'Toàn bộ dữ liệu thu chi và các ví sẽ bị xóa sạch hoàn toàn. Hệ thống sẽ chỉ giữ lại duy nhất 1 ví "Tiền mặt" với số dư 0đ và không có bất kỳ giao dịch nào. Dữ liệu ban đầu rỗng này sẽ được đồng bộ ngay lập tức lên cơ sở dữ liệu đám mây. Bạn có chắc chắn muốn thực hiện?',
+      confirmText: 'Xóa hết & Làm mới',
       variant: 'danger',
-      onConfirm: () => {
-        const freshDefault: AppState = JSON.parse(JSON.stringify(DEFAULT_STATE));
-        setState(freshDefault);
-        saveAppState(freshDefault);
-        setSelectedWalletId('all');
-        showToast('Đã đặt lại dữ liệu mặc định ban đầu thành công!');
-      },
-    });
-  };
+      onConfirm: async () => {
+        const cleanDefaultWallet: Wallet = {
+          id: 'w-cash',
+          name: 'Tiền mặt',
+          initialBalance: 0,
+          color: 'indigo',
+          icon: 'wallet',
+          expenseGroups: [
+            {
+              id: 'group-essentials',
+              name: 'Chi tiêu thiết yếu',
+              color: 'indigo',
+              categories: ['Ăn uống', 'Di chuyển', 'Hóa đơn', 'Mua sắm', 'Nhà cửa'],
+            },
+            {
+              id: 'group-personal',
+              name: 'Cá nhân & Giải trí',
+              color: 'purple',
+              categories: ['Giải trí', 'Học tập', 'Sức khỏe', 'Làm đẹp'],
+            },
+          ],
+          incomeCategories: ['Lương', 'Thưởng', 'Kinh doanh', 'Đầu tư', 'Khác'],
+        };
 
-  const handleClearAllTransactions = () => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Xóa toàn bộ lịch sử giao dịch',
-      message: 'Tất cả các giao dịch thu/chi sẽ bị xóa sạch, các ví và danh mục của bạn vẫn được giữ nguyên. Bạn có chắc chắn?',
-      confirmText: 'Xóa sạch giao dịch',
-      variant: 'danger',
-      onConfirm: () => {
-        setState((prev) => {
-          const cleared: AppState = {
-            ...prev,
-            transactions: [],
-          };
-          saveAppState(cleared);
-          return cleared;
-        });
-        showToast('Đã xóa sạch toàn bộ lịch sử giao dịch!');
+        const cleanState: AppState = {
+          wallets: [cleanDefaultWallet],
+          transactions: [],
+          activeWalletId: 'w-cash',
+        };
+
+        setState(cleanState);
+        saveAppState(cleanState);
+        setSelectedWalletId('w-cash');
+        await syncStateToFirestore(cleanState);
+        showToast('Đã xóa sạch toàn bộ dữ liệu! Chỉ còn 1 ví Tiền mặt (0đ) và đã đồng bộ lên CSDL.');
       },
     });
   };
@@ -1995,23 +2014,14 @@ export default function App() {
                 </label>
               </div>
 
-              <div className="pt-2 space-y-2">
+              <div className="pt-2">
                 <button
                   type="button"
-                  onClick={handleClearAllTransactions}
-                  className="w-full py-3 px-4 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-colors flex items-center justify-center gap-2 border border-amber-200/70 active:scale-[0.99]"
+                  onClick={handleWipeAndResetCleanData}
+                  className="w-full py-3.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs uppercase tracking-wider rounded-2xl transition-all flex items-center justify-center gap-2 border border-rose-200/80 shadow-xs active:scale-[0.99]"
                 >
-                  <Trash2 className="w-4 h-4 text-amber-600" />
-                  <span>Xóa tất cả giao dịch (Giữ nguyên ví)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleResetData}
-                  className="w-full py-3 px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-colors flex items-center justify-center gap-2 border border-rose-200/70 active:scale-[0.99]"
-                >
-                  <RotateCcw className="w-4 h-4 text-rose-600" />
-                  <span>Đặt lại dữ liệu mặc định ban đầu</span>
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  <span>Xóa hết tất cả dữ liệu (Chỉ giữ 1 ví trống 0đ & đồng bộ CSDL)</span>
                 </button>
               </div>
             </div>
@@ -2093,7 +2103,7 @@ export default function App() {
                         <p className="text-[10px] text-slate-400">Đăng nhập Google để đồng bộ đa thiết bị</p>
                       </div>
                       <button
-                        onClick={handleGoogleLogin}
+                        onClick={() => handleGoogleLogin(false)}
                         disabled={isGoogleLoggingIn}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 font-bold text-xs shadow-2xs transition-colors shrink-0 disabled:opacity-50"
                       >
@@ -2279,6 +2289,14 @@ export default function App() {
         variant={confirmDialog.variant}
         onConfirm={confirmDialog.onConfirm}
         onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Auth Help Modal (Safari Pop-up Blocker / Authorized Domains) */}
+      <AuthHelpModal
+        isOpen={isAuthHelpModalOpen}
+        errorDetails={authErrorDetails}
+        onClose={() => setIsAuthHelpModalOpen(false)}
+        onRetryRedirect={() => handleGoogleLogin(true)}
       />
     </div>
   );

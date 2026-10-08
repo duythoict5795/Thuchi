@@ -3,6 +3,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   User,
@@ -112,40 +114,157 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
-// Setup Auth state listener
+// Setup Auth state listener and handle redirect login results (for Safari / iOS PWA)
 let authInitializedPromise: Promise<User | null> | null = null;
 export function initFirebaseService(): Promise<User | null> {
   if (authInitializedPromise) return authInitializedPromise;
 
-  authInitializedPromise = new Promise((resolve) => {
-    onAuthStateChanged(auth, (user) => {
-      currentUser = user;
-      isFirestoreOnline = true;
-      notifyStatus();
-      resolve(user);
-    });
+  authInitializedPromise = (async () => {
+    // 1. Process redirect result if returning from Google OAuth redirect (Safari / mobile)
+    try {
+      const redirectResult = await getRedirectResult(auth);
+      if (redirectResult?.user) {
+        currentUser = redirectResult.user;
+        isFirestoreOnline = true;
+        notifyStatus();
+      }
+    } catch (redirectErr: any) {
+      console.warn('Firebase redirect result warning:', redirectErr);
+    }
 
-    testConnection().then((online) => {
-      isFirestoreOnline = online;
-      notifyStatus();
+    // 2. Listen to continuous auth state
+    return new Promise<User | null>((resolve) => {
+      onAuthStateChanged(auth, (user) => {
+        currentUser = user;
+        isFirestoreOnline = true;
+        notifyStatus();
+        resolve(user);
+      });
+
+      testConnection().then((online) => {
+        isFirestoreOnline = online;
+        notifyStatus();
+      });
     });
-  });
+  })();
 
   return authInitializedPromise;
 }
 
-// Google Login
-export async function loginWithGoogle(): Promise<User | null> {
+export interface AuthErrorDetails {
+  code: string;
+  originalMessage: string;
+  title: string;
+  explanation: string;
+  solutionSteps: string[];
+  link?: { label: string; url: string };
+  isSafariSpecific?: boolean;
+}
+
+export function parseAuthError(err: any): AuthErrorDetails {
+  const code = err?.code || 'unknown';
+  const rawMessage = err?.message || String(err);
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const projectId = firebaseConfig.projectId;
+
+  if (code === 'auth/unauthorized-domain') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Tên miền chưa được cấp phép trong Firebase',
+      explanation: `Tên miền hiện tại "${currentHostname}" chưa được thêm vào Danh sách miền được ủy quyền (Authorized domains) của dự án Firebase (${projectId}). Khi mở trên GitHub Pages hoặc tên miền riêng, Firebase sẽ chặn đăng nhập Google cho đến khi bạn thêm tên miền này vào.`,
+      solutionSteps: [
+        `Truy cập Firebase Console mục Authentication > Settings của dự án.`,
+        `Tại phần "Authorized domains" (Miền được ủy quyền), bấm "Add domain".`,
+        `Dán tên miền: ${currentHostname} rồi bấm Save (Lưu).`,
+        `Quay lại trang này và bấm nút Đăng nhập Google lại.`,
+      ],
+      link: {
+        label: 'Mở Cài đặt Firebase Console Authorized Domains',
+        url: `https://console.firebase.google.com/project/${projectId}/authentication/settings`,
+      },
+    };
+  }
+
+  if (code === 'auth/popup-blocked') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Safari đã chặn Cửa sổ Pop-up đăng nhập',
+      explanation: 'Trình duyệt Safari trên iPhone/iPad hoặc Mac theo mặc định sẽ chặn các cửa sổ pop-up tự mở khi đăng nhập tài khoản Google.',
+      solutionSteps: [
+        'Cách 1 (Khuyên dùng): Trên iPhone/iPad vào Cài đặt máy > Safari > Tắt mục "Chặn cửa sổ bật lên" (Block Pop-ups).',
+        'Cách 2: Trong Cài đặt > Safari > Tắt mục "Ngăn chặn theo dõi qua trang web" (Prevent Cross-Site Tracking).',
+        'Cách 3: Sử dụng nút "Thử Đăng nhập Chuyển hướng" bên dưới để chuyển thẳng sang trang Google thay vì mở popup.',
+      ],
+      isSafariSpecific: true,
+    };
+  }
+
+  if (code === 'auth/popup-closed-by-user') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Cửa sổ đăng nhập đã bị đóng',
+      explanation: 'Bạn đã đóng cửa sổ Google trước khi hoàn tất đăng nhập tài khoản.',
+      solutionSteps: ['Vui lòng bấm lại nút "Đăng nhập Google" và chọn tài khoản của bạn.'],
+    };
+  }
+
+  if (code === 'auth/cancelled-popup-request') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Yêu cầu đăng nhập bị hủy',
+      explanation: 'Có nhiều lần bấm liên tiếp hoặc Safari đã tự động hủy yêu cầu mở cửa sổ xác thực.',
+      solutionSteps: ['Vui lòng đợi vài giây và bấm lại nút Đăng nhập Google một lần.'],
+      isSafariSpecific: true,
+    };
+  }
+
+  return {
+    code,
+    originalMessage: rawMessage,
+    title: 'Không thể đăng nhập tài khoản Google',
+    explanation: 'Quá trình đăng nhập qua Google gặp sự cố trên trình duyệt. Có thể do Safari chặn cookie bên thứ 3 hoặc lỗi mạng.',
+    solutionSteps: [
+      'Nếu đang dùng Safari: Vào Cài đặt > Safari > Tắt "Ngăn chặn theo dõi trên mọi trang web" (Prevent Cross-Site Tracking).',
+      'Đảm bảo kết nối internet đang hoạt động bình thường.',
+      'Ứng dụng vẫn tự động đồng bộ đám mây và lưu trữ ngoại tuyến an toàn mà không cần tài khoản.',
+    ],
+    isSafariSpecific: true,
+  };
+}
+
+// Google Login with Safari and iOS PWA compatibility
+export async function loginWithGoogle(forceRedirect = false): Promise<User | null> {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  const isStandalone = typeof window !== 'undefined' &&
+    ((window.navigator as any).standalone === true || window.matchMedia?.('(display-mode: standalone)').matches);
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+
+  // On iOS standalone PWA or explicit redirect request, use signInWithRedirect (if not in iframe)
+  if ((forceRedirect || isStandalone) && !isInIframe) {
+    await signInWithRedirect(auth, provider);
+    return null;
+  }
+
   try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
     const result = await signInWithPopup(auth, provider);
     currentUser = result.user;
     isFirestoreOnline = true;
     notifyStatus();
     return result.user;
-  } catch (err) {
+  } catch (err: any) {
     console.error('Google login error:', err);
+    // If popup was blocked in Safari and not in an iframe, attempt transparent redirect
+    if ((err?.code === 'auth/popup-blocked' || err?.code === 'auth/cancelled-popup-request') && !isInIframe) {
+      console.log('Falling back to signInWithRedirect due to popup-blocked...');
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
     throw err;
   }
 }
