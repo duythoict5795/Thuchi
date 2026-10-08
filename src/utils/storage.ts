@@ -102,7 +102,7 @@ export function getMonthStats(monthStr: string, walletId: string, transactions: 
 }
 
 export const DEFAULT_STATE: AppState = {
-  activeWalletId: 'all',
+  activeWalletId: 'w-cash',
   wallets: USER_WALLETS,
   transactions: USER_TRANSACTIONS,
 };

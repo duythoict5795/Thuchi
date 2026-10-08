@@ -50,6 +50,7 @@ import { WalletModal } from './components/WalletModal';
 import { TransactionModal } from './components/TransactionModal';
 import { TransferModal } from './components/TransferModal';
 import { CategoryManager } from './components/CategoryManager';
+import { getWalletGradient } from './utils/gradients';
 
 export default function App() {
   const [state, setState] = useState<AppState>(loadAppState);
@@ -57,8 +58,13 @@ export default function App() {
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<'home' | 'analysis' | 'history' | 'settings'>('home');
 
-  // Currently selected wallet in UI: 'all' (Ví Tổng Hợp) or wallet.id
-  const [selectedWalletId, setSelectedWalletId] = useState<string>('all');
+  // Currently selected wallet in UI: Mặc định hiển thị ví Tiền mặt
+  const [selectedWalletId, setSelectedWalletId] = useState<string>(() => {
+    const cash = state.wallets.find(
+      (w) => w.id === 'w-cash' || w.name.toLowerCase().includes('tiền mặt')
+    );
+    return cash ? cash.id : (state.wallets[0]?.id || 'all');
+  });
 
   // Modals state
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
@@ -82,7 +88,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [historyWalletFilter, setHistoryWalletFilter] = useState('all');
   const [historyTypeFilter, setHistoryTypeFilter] = useState<string>('all');
-  const [collapsedKeys, setCollapsedKeys] = useState<Record<string, boolean>>({});
+  const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
 
   // Analysis Tab state
   const [analysisWalletFilter, setAnalysisWalletFilter] = useState('all');
@@ -97,7 +103,8 @@ export default function App() {
   // Home: Toggle wallet picker visibility (bình thường ẩn, nhấn vào số tiền mới hiện ra)
   const [isWalletPickerOpen, setIsWalletPickerOpen] = useState(false);
 
-  // Settings: Selected wallet to edit categories (bình thường ẩn Ảnh 3, khi nhấn vào ví mới hiện ra)
+  // Settings: Trạng thái mở/ẩn mục tùy chỉnh danh mục và ví đang chọn để chỉnh
+  const [isSettingsCategoryOpen, setIsSettingsCategoryOpen] = useState(false);
   const [selectedSettingsWalletId, setSelectedSettingsWalletId] = useState<string | null>(null);
 
   // Floating Toast Notification
@@ -353,9 +360,9 @@ export default function App() {
     }
   };
 
-  // Toggle tree collapse
-  const toggleCollapse = (key: string) => {
-    setCollapsedKeys((prev) => ({ ...prev, [key]: !prev[key] }));
+  // Toggle tree expand/collapse (Mặc định chi tiết các tháng không hiện ra, nhấn vào mới hiện ra)
+  const toggleExpand = (key: string) => {
+    setExpandedKeys((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   // ----------------------------------------------------
@@ -631,11 +638,10 @@ export default function App() {
           <div className="space-y-6 animate-in fade-in duration-150">
             {/* Main Balance Hero Card (Nhấn vào số tiền để đổi ví) */}
             <div
-              className={`rounded-3xl p-6 text-white shadow-xl transition-all duration-300 ${
-                selectedWalletId === 'all'
-                  ? 'bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800'
-                  : 'bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950'
-              }`}
+              className="rounded-3xl p-6 text-white shadow-xl transition-all duration-300 relative overflow-hidden"
+              style={{
+                background: getWalletGradient(activeWallet, selectedWalletId === 'all'),
+              }}
             >
               <div className="flex items-center justify-between">
                 <div
@@ -800,7 +806,7 @@ export default function App() {
                       >
                         <div
                           className="w-7 h-7 rounded-xl flex items-center justify-center text-white shadow-2xs"
-                          style={{ backgroundColor: wallet.color }}
+                          style={{ background: getWalletGradient(wallet) }}
                         >
                           <WalletIcon icon={wallet.icon} className="w-3.5 h-3.5" />
                         </div>
@@ -824,7 +830,7 @@ export default function App() {
               </h3>
 
               <form onSubmit={handleAddQuickTransaction} className="space-y-4">
-                {/* Type Switcher */}
+                {/* Type Switcher: 3 nút chi tiêu, thu nhập, chuyển tiền */}
                 <div className="grid grid-cols-3 p-1 bg-slate-100 rounded-2xl gap-1">
                   <button
                     type="button"
@@ -861,7 +867,21 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Wallets & Categories Selection */}
+                {/* Chọn ngày: Nằm ngay bên dưới 3 nút */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                    Ngày
+                  </label>
+                  <input
+                    type="date"
+                    value={quickDate}
+                    onChange={(e) => setQuickDate(e.target.value)}
+                    required
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Giữ nguyên: Ví & Danh mục */}
                 {quickType === 'transfer' ? (
                   <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                     <div>
@@ -925,7 +945,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Category Selector (Tự động tải danh mục theo ví đã chọn) */}
+                    {/* Category Selector */}
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
                         Danh mục ({currentQuickWallet?.name})
@@ -992,32 +1012,15 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Date & Note */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                      Ngày
-                    </label>
-                    <input
-                      type="date"
-                      value={quickDate}
-                      onChange={(e) => setQuickDate(e.target.value)}
-                      required
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                      Ghi chú
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Chi tiết giao dịch..."
-                      value={quickNote}
-                      onChange={(e) => setQuickNote(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
+                {/* Ghi chú: Rộng bằng chiều ngang, bỏ chữ ghi chú ở trên, placeholder là "Ghi chú" */}
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Ghi chú"
+                    value={quickNote}
+                    onChange={(e) => setQuickNote(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+                  />
                 </div>
 
                 <button
@@ -1043,17 +1046,23 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Transactions filtered for home */}
+              {/* Transactions grouped by day for current month */}
               {(() => {
-                const recentThisMonth = state.transactions
+                // Lọc tất cả giao dịch trong tháng hiện tại và sắp xếp ngày mới nhất lên đầu
+                const monthTransactions = state.transactions
                   .filter((t) => {
                     if (!t.date.startsWith(currentMonth)) return false;
                     if (selectedWalletId === 'all') return true;
                     return t.walletId === selectedWalletId || t.toWalletId === selectedWalletId;
                   })
-                  .slice(0, 8);
+                  .sort((a, b) => {
+                    if (a.date !== b.date) {
+                      return b.date.localeCompare(a.date); // ngày gần nhất ở trên
+                    }
+                    return (b.createdAt || 0) - (a.createdAt || 0); // giao dịch gần nhất ở trên
+                  });
 
-                if (recentThisMonth.length === 0) {
+                if (monthTransactions.length === 0) {
                   return (
                     <div className="text-center py-10 bg-white rounded-3xl border border-slate-100 p-6 text-slate-400 text-xs italic">
                       Chưa có giao dịch nào trong tháng này. Hãy thêm giao dịch đầu tiên!
@@ -1061,83 +1070,142 @@ export default function App() {
                   );
                 }
 
+                // Gom nhóm theo từng ngày
+                const dayGroupsMap = new Map<string, Transaction[]>();
+                for (const t of monthTransactions) {
+                  const list = dayGroupsMap.get(t.date) || [];
+                  list.push(t);
+                  dayGroupsMap.set(t.date, list);
+                }
+
+                const dayGroups = Array.from(dayGroupsMap.entries()).map(([date, items]) => {
+                  let dayIncome = 0;
+                  let dayExpense = 0;
+                  for (const it of items) {
+                    if (selectedWalletId === 'all') {
+                      if (it.type === 'income') dayIncome += it.amount;
+                      else if (it.type === 'expense') dayExpense += it.amount;
+                    } else {
+                      if (it.type === 'income' && it.walletId === selectedWalletId) dayIncome += it.amount;
+                      else if (it.type === 'expense' && it.walletId === selectedWalletId) dayExpense += it.amount;
+                      else if (it.type === 'transfer') {
+                        if (it.toWalletId === selectedWalletId) dayIncome += it.amount;
+                        else if (it.walletId === selectedWalletId) dayExpense += it.amount;
+                      }
+                    }
+                  }
+                  return { date, items, dayIncome, dayExpense };
+                });
+
                 return (
-                  <div className="space-y-2">
-                    {recentThisMonth.map((t) => {
-                      const wallet = state.wallets.find((w) => w.id === t.walletId);
-                      const toWallet = state.wallets.find((w) => w.id === t.toWalletId);
+                  <div className="space-y-4">
+                    {dayGroups.map(({ date, items, dayIncome, dayExpense }) => {
+                      const todayStr = getTodayDateString();
+                      const dateParts = date.split('-');
+                      const displayDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+
+                      let dayTitle = displayDate;
+                      if (date === todayStr) {
+                        dayTitle = `Hôm nay (${displayDate})`;
+                      } else {
+                        const d = new Date(date + 'T00:00:00');
+                        const dayOfWeek = d.getDay();
+                        const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+                        dayTitle = `${dayNames[dayOfWeek]}, ${displayDate}`;
+                      }
 
                       return (
-                        <div
-                          key={t.id}
-                          className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-2xs flex items-center justify-between transition-colors hover:border-slate-200"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-[9px] flex-shrink-0 ${
-                                t.type === 'income'
-                                  ? 'bg-emerald-50 text-emerald-600'
-                                  : t.type === 'expense'
-                                  ? 'bg-red-50 text-red-600'
-                                  : 'bg-indigo-50 text-indigo-600'
-                              }`}
-                            >
-                              {t.type === 'income' ? 'THU' : t.type === 'expense' ? 'CHI' : 'CHUYỂN'}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-bold text-slate-800 text-xs truncate">
-                                {t.type === 'transfer'
-                                  ? `${wallet?.name} ➔ ${toWallet?.name}`
-                                  : t.category}
-                              </p>
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                                <span
-                                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: wallet?.color || '#cbd5e1' }}
-                                />
-                                <span className="truncate">{wallet?.name}</span>
-                                <span>·</span>
-                                <span>{t.date.split('-').reverse().join('/')}</span>
-                                {t.note && (
-                                  <>
-                                    <span>·</span>
-                                    <span className="truncate max-w-[100px]">{t.note}</span>
-                                  </>
-                                )}
-                              </div>
+                        <div key={date} className="bg-white rounded-3xl border border-slate-100 shadow-2xs overflow-hidden">
+                          {/* Tiêu đề ngày kèm tổng chi hoặc thu */}
+                          <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-700">{dayTitle}</span>
+                            <div className="flex items-center gap-2 font-bold text-[11px] tabular-nums">
+                              {dayIncome > 0 && (
+                                <span className="text-emerald-600">+{formatVND(dayIncome)}</span>
+                              )}
+                              {dayExpense > 0 && (
+                                <span className="text-red-500">-{formatVND(dayExpense)}</span>
+                              )}
+                              {dayIncome === 0 && dayExpense === 0 && (
+                                <span className="text-slate-400">0 ₫</span>
+                              )}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 flex-shrink-0 ml-2">
-                            <span
-                              className={`text-xs font-bold tabular-nums ${
+                          {/* Các giao dịch trong ngày */}
+                          <div className="divide-y divide-slate-100/80">
+                            {items.map((t) => {
+                              const wallet = state.wallets.find((w) => w.id === t.walletId);
+                              const toWallet = state.wallets.find((w) => w.id === t.toWalletId);
+
+                              // "danh mục ở trên - ví nếu là tổng hợp nếu chọn từng ví riêng lẻ thì không cần - ví"
+                              let categoryTitle = t.category;
+                              if (t.type === 'transfer') {
+                                categoryTitle = selectedWalletId === 'all'
+                                  ? `Chuyển tiền: ${wallet?.name} ➔ ${toWallet?.name}`
+                                  : t.walletId === selectedWalletId
+                                  ? `Chuyển sang ${toWallet?.name}`
+                                  : `Nhận từ ${wallet?.name}`;
+                              } else if (selectedWalletId === 'all') {
+                                categoryTitle = `${t.category} - ${wallet?.name}`;
+                              }
+
+                              const lineBorderColor =
                                 t.type === 'income'
-                                  ? 'text-emerald-600'
+                                  ? 'border-l-emerald-500'
                                   : t.type === 'expense'
-                                  ? 'text-slate-800'
-                                  : 'text-indigo-600'
-                              }`}
-                            >
-                              {t.type === 'income' ? '+' : t.type === 'expense' ? '-' : ''}
-                              {formatVND(t.amount)}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => {
-                                  setTransactionToEdit(t);
-                                  setIsTransactionModalOpen(true);
-                                }}
-                                className="p-1 text-slate-300 hover:text-indigo-600 transition-colors"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTransaction(t.id)}
-                                className="p-1 text-slate-300 hover:text-red-600 transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                                  ? 'border-l-red-500'
+                                  : 'border-l-blue-500';
+
+                              return (
+                                <div
+                                  key={t.id}
+                                  onClick={() => {
+                                    setTransactionToEdit(t);
+                                    setIsTransactionModalOpen(true);
+                                  }}
+                                  className={`p-3.5 pl-4 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors border-l-4 ${lineBorderColor}`}
+                                  title="Nhấn để sửa giao dịch"
+                                >
+                                  {/* Bên trái: Danh mục ở trên, bên dưới là ghi chú */}
+                                  <div className="min-w-0 pr-2">
+                                    <p className="font-bold text-slate-800 text-xs truncate">
+                                      {categoryTitle}
+                                    </p>
+                                    <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                                      {t.note ? t.note : (t.type === 'transfer' ? 'Chuyển tiền nội bộ' : 'Không có ghi chú')}
+                                    </p>
+                                  </div>
+
+                                  {/* Bên phải: Số tiền, nút xóa (đã bỏ icon cây viết) */}
+                                  <div className="flex items-center gap-2.5 flex-shrink-0">
+                                    <span
+                                      className={`text-xs font-bold tabular-nums ${
+                                        t.type === 'income'
+                                          ? 'text-emerald-600'
+                                          : t.type === 'expense'
+                                          ? 'text-slate-800'
+                                          : 'text-blue-600'
+                                      }`}
+                                    >
+                                      {t.type === 'income' ? '+' : t.type === 'expense' ? '-' : ''}
+                                      {formatVND(t.amount)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteTransaction(t.id);
+                                      }}
+                                      className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Xóa giao dịch"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1198,7 +1266,7 @@ export default function App() {
                     onChange={(e) => setAnalysisWalletFilter(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-800"
                   >
-                    <option value="all">✨ Tất cả các ví (Toàn hệ thống)</option>
+                    <option value="all">Tất cả các ví (Toàn hệ thống)</option>
                     {state.wallets.map((w) => (
                       <option key={w.id} value={w.id}>
                         {w.name}
@@ -1346,7 +1414,7 @@ export default function App() {
                     onChange={(e) => setHistoryWalletFilter(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700"
                   >
-                    <option value="all">✨ Tất cả các ví</option>
+                    <option value="all">Tất cả các ví</option>
                     {state.wallets.map((w) => (
                       <option key={w.id} value={w.id}>
                         {w.name}
@@ -1378,7 +1446,8 @@ export default function App() {
               ) : (
                 historyData.map((mObj) => {
                   const [y, m] = mObj.monthStr.split('-');
-                  const isMonthCollapsed = collapsedKeys[mObj.monthStr];
+                  // Mặc định chi tiết các tháng không hiện ra, nhấn vào mới hiện ra
+                  const isMonthExpanded = !!expandedKeys[mObj.monthStr];
 
                   return (
                     <div
@@ -1387,7 +1456,7 @@ export default function App() {
                     >
                       {/* Month Header */}
                       <button
-                        onClick={() => toggleCollapse(mObj.monthStr)}
+                        onClick={() => toggleExpand(mObj.monthStr)}
                         className="w-full flex items-center justify-between p-4 bg-slate-50/80 hover:bg-slate-100/60 transition-colors border-b border-slate-100 text-left"
                       >
                         <div>
@@ -1399,25 +1468,25 @@ export default function App() {
                             <span className="text-red-500">-{formatVND(mObj.expense)}</span>
                           </div>
                         </div>
-                        {isMonthCollapsed ? (
-                          <ChevronDown className="w-4 h-4 text-slate-400" />
-                        ) : (
+                        {isMonthExpanded ? (
                           <ChevronUp className="w-4 h-4 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
                         )}
                       </button>
 
                       {/* Days inside Month */}
-                      {!isMonthCollapsed && (
+                      {isMonthExpanded && (
                         <div className="divide-y divide-slate-100">
                           {mObj.dayList.map((dObj) => {
-                            const isDayCollapsed = collapsedKeys[dObj.date];
+                            const isDayCollapsed = !!expandedKeys[dObj.date];
                             const dateParts = dObj.date.split('-');
                             const dayDisplay = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
 
                             return (
                               <div key={dObj.date} className="p-3 space-y-2">
                                 <button
-                                  onClick={() => toggleCollapse(dObj.date)}
+                                  onClick={() => toggleExpand(dObj.date)}
                                   className="w-full flex items-center justify-between text-left px-1"
                                 >
                                   <div className="flex items-center gap-2">
@@ -1442,10 +1511,26 @@ export default function App() {
                                       const wallet = state.wallets.find((w) => w.id === t.walletId);
                                       const toWallet = state.wallets.find((w) => w.id === t.toWalletId);
 
+                                      const historyTitle =
+                                        t.type === 'transfer'
+                                          ? `${wallet?.name || 'Ví'} ➔ ${toWallet?.name || 'Ví'} - Chuyển tiền`
+                                          : `${wallet?.name || 'Ví'} - ${t.category}`;
+
+                                      const historyNote = t.note
+                                        ? t.note
+                                        : t.type === 'transfer'
+                                        ? 'Chuyển tiền nội bộ'
+                                        : 'Không có ghi chú';
+
                                       return (
                                         <div
                                           key={t.id}
-                                          className="flex items-center justify-between p-2.5 bg-slate-50 rounded-2xl hover:bg-slate-100/70 transition-colors"
+                                          onClick={() => {
+                                            setTransactionToEdit(t);
+                                            setIsTransactionModalOpen(true);
+                                          }}
+                                          className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-2xl cursor-pointer transition-colors"
+                                          title="Nhấn để sửa giao dịch"
                                         >
                                           <div className="flex items-center gap-2.5 min-w-0">
                                             <div
@@ -1454,7 +1539,7 @@ export default function App() {
                                                   ? 'bg-emerald-100 text-emerald-700'
                                                   : t.type === 'expense'
                                                   ? 'bg-red-100 text-red-700'
-                                                  : 'bg-indigo-100 text-indigo-700'
+                                                  : 'bg-blue-100 text-blue-700'
                                               }`}
                                             >
                                               {t.type === 'income'
@@ -1465,17 +1550,10 @@ export default function App() {
                                             </div>
                                             <div className="min-w-0">
                                               <p className="text-xs font-bold text-slate-800 truncate">
-                                                {t.type === 'transfer'
-                                                  ? `${wallet?.name} ➔ ${toWallet?.name}`
-                                                  : t.category}
+                                                {historyTitle}
                                               </p>
-                                              <p className="text-[10px] text-slate-400 truncate">
-                                                <span
-                                                  className="inline-block w-1.5 h-1.5 rounded-full mr-1"
-                                                  style={{ backgroundColor: wallet?.color || '#94a3b8' }}
-                                                />
-                                                {wallet?.name}
-                                                {t.note ? ` · ${t.note}` : ''}
+                                              <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                                {historyNote}
                                               </p>
                                             </div>
                                           </div>
@@ -1487,29 +1565,23 @@ export default function App() {
                                                   ? 'text-emerald-600'
                                                   : t.type === 'expense'
                                                   ? 'text-slate-900'
-                                                  : 'text-indigo-600'
+                                                  : 'text-blue-600'
                                               }`}
                                             >
                                               {t.type === 'income' ? '+' : t.type === 'expense' ? '-' : ''}
                                               {formatVND(t.amount)}
                                             </span>
-                                            <div className="flex items-center">
-                                              <button
-                                                onClick={() => {
-                                                  setTransactionToEdit(t);
-                                                  setIsTransactionModalOpen(true);
-                                                }}
-                                                className="p-1 text-slate-300 hover:text-indigo-600"
-                                              >
-                                                <Edit3 className="w-3.5 h-3.5" />
-                                              </button>
-                                              <button
-                                                onClick={() => handleDeleteTransaction(t.id)}
-                                                className="p-1 text-slate-300 hover:text-red-600"
-                                              >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                              </button>
-                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteTransaction(t.id);
+                                              }}
+                                              className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                              title="Xóa giao dịch"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
                                           </div>
                                         </div>
                                       );
@@ -1557,26 +1629,17 @@ export default function App() {
               <div className="space-y-3">
                 {state.wallets.map((w) => {
                   const bal = calculateWalletBalance(w.id, state.wallets, state.transactions);
-                  const isSelected = selectedSettingsWalletId === w.id;
 
                   return (
                     <div
                       key={w.id}
-                      className={`p-4 rounded-2xl border transition-all ${
-                        isSelected
-                          ? 'bg-indigo-50/50 border-indigo-300 shadow-xs'
-                          : 'bg-slate-50 border-slate-100 hover:border-slate-200'
-                      }`}
+                      className="p-4 rounded-2xl border border-slate-100 bg-slate-50 hover:border-slate-200 transition-all"
                     >
                       <div className="flex items-center justify-between">
-                        <div
-                          onClick={() => setSelectedSettingsWalletId(isSelected ? null : w.id)}
-                          className="flex items-center gap-3 cursor-pointer flex-1 select-none"
-                          title="Nhấn để mở tùy chỉnh danh mục của ví này"
-                        >
+                        <div className="flex items-center gap-3 flex-1 select-none">
                           <div
                             className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-2xs"
-                            style={{ backgroundColor: w.color }}
+                            style={{ background: getWalletGradient(w) }}
                           >
                             <WalletIcon icon={w.icon} className="w-5 h-5" />
                           </div>
@@ -1586,11 +1649,6 @@ export default function App() {
                               <span className="text-[10px] text-slate-400 font-medium">
                                 {w.expenseGroups.length} nhóm chi
                               </span>
-                              {isSelected && (
-                                <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-full">
-                                  Đang mở danh mục ▾
-                                </span>
-                              )}
                             </div>
                             <p className="text-xs font-bold text-indigo-700 tabular-nums mt-0.5">
                               Hiện có: {formatVND(bal)}
@@ -1601,29 +1659,20 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Chỉ có nút Sửa và Xóa (đã bỏ nút tùy chỉnh danh mục ở từng ví) */}
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setSelectedSettingsWalletId(isSelected ? null : w.id)}
-                            className={`px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-colors ${
-                              isSelected
-                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                : 'bg-white border-slate-200 text-slate-700 hover:text-indigo-600 hover:border-indigo-300'
-                            }`}
-                          >
-                            {isSelected ? 'Thu gọn' : 'Tùy chỉnh danh mục'}
-                          </button>
                           <button
                             onClick={() => {
                               setWalletToEdit(w);
                               setIsWalletModalOpen(true);
                             }}
-                            className="px-2 py-1.5 bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 text-xs font-bold rounded-xl transition-colors"
+                            className="px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:text-indigo-600 hover:border-indigo-200 text-xs font-bold rounded-xl transition-colors shadow-2xs"
                           >
                             Sửa
                           </button>
                           <button
                             onClick={() => handleDeleteWallet(w.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors rounded-lg"
                             title="Xóa ví"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1634,33 +1683,86 @@ export default function App() {
                   );
                 })}
               </div>
+
+              {/* Nút bên dưới quản lý các ví: Nhấn vào là tùy chỉnh danh mục */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSettingsCategoryOpen(true);
+                    if (!selectedSettingsWalletId && state.wallets.length > 0) {
+                      setSelectedSettingsWalletId(state.wallets[0].id);
+                    }
+                  }}
+                  className="w-full py-3.5 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-[0.99]"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  <span>Tùy Chỉnh Danh Mục</span>
+                </button>
+              </div>
             </div>
 
-            {/* SECTION 2: Tùy chỉnh danh mục độc lập theo từng ví (Bình thường ẩn, nhấn vào ví mới hiện ra) */}
-            {selectedSettingsWalletId && (
+            {/* SECTION 2: Tùy chỉnh danh mục theo ví (Chỉ hiện khi nhấn nút "Tùy chỉnh danh mục") */}
+            {isSettingsCategoryOpen && (
               <div className="bg-white rounded-3xl p-5 shadow-2xs border border-indigo-100 space-y-4 animate-in fade-in duration-200">
+                {/* Nút ẩn bên trên tùy chỉnh danh mục các ví */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
                     <h3 className="text-base font-bold text-slate-800">
-                      Tùy Chỉnh Danh Mục ({state.wallets.find((w) => w.id === selectedSettingsWalletId)?.name})
+                      Tùy Chỉnh Danh Mục Các Ví
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Mỗi ví có danh mục độc lập giúp quản lý ngân sách hiệu quả cho từng mục đích
+                      Chọn ví bên dưới để thiết lập nhóm chi và nguồn thu nhập riêng biệt
                     </p>
                   </div>
                   <button
-                    onClick={() => setSelectedSettingsWalletId(null)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors"
+                    type="button"
+                    onClick={() => setIsSettingsCategoryOpen(false)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                    title="Ẩn tùy chỉnh danh mục"
                   >
-                    <X className="w-3.5 h-3.5" />
-                    <span>Thu gọn</span>
+                    <ChevronUp className="w-4 h-4" />
+                    <span>Ẩn tùy chỉnh danh mục</span>
                   </button>
+                </div>
+
+                {/* Người dùng chọn ví để chỉnh */}
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                    Chọn ví để chỉnh:
+                  </label>
+                  <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                    {state.wallets.map((w) => {
+                      const isSelected =
+                        (selectedSettingsWalletId || state.wallets[0]?.id) === w.id;
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => setSelectedSettingsWalletId(w.id)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                            isSelected
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span
+                            className="w-5 h-5 rounded-md flex items-center justify-center text-white"
+                            style={{ background: getWalletGradient(w) }}
+                          >
+                            <WalletIcon icon={w.icon} className="w-3 h-3" />
+                          </span>
+                          <span>{w.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <CategoryManager
                   wallets={state.wallets}
-                  activeWalletId={selectedSettingsWalletId}
-                  onClose={() => setSelectedSettingsWalletId(null)}
+                  activeWalletId={selectedSettingsWalletId || state.wallets[0]?.id}
+                  onClose={() => setIsSettingsCategoryOpen(false)}
                   onUpdateWallet={(updated) => {
                     setState((prev) => ({
                       ...prev,

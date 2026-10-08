@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, FolderPlus, Copy, Check, X } from 'lucide-react';
 import { Wallet, ExpenseGroup } from '../types/finance';
 import { WalletIcon } from './WalletIcon';
+import { getWalletGradient } from '../utils/gradients';
 
 interface CategoryManagerProps {
   wallets: Wallet[];
@@ -186,8 +187,8 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
                 }`}
               >
                 <span
-                  className="w-5 h-5 rounded-md flex items-center justify-center text-white"
-                  style={{ backgroundColor: w.color }}
+                  className="w-5 h-5 rounded-md flex items-center justify-center text-white shadow-2xs"
+                  style={{ background: getWalletGradient(w) }}
                 >
                   <WalletIcon icon={w.icon} className="w-3 h-3" />
                 </span>
@@ -202,8 +203,8 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
       <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
-            style={{ backgroundColor: activeWallet.color }}
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-2xs"
+            style={{ background: getWalletGradient(activeWallet) }}
           >
             <WalletIcon icon={activeWallet.icon} className="w-5 h-5" />
           </div>

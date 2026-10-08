@@ -3,6 +3,7 @@ import { X, Check } from 'lucide-react';
 import { Wallet } from '../types/finance';
 import { formatNumber, parseFormattedNumber } from '../utils/storage';
 import { WalletIcon } from './WalletIcon';
+import { WALLET_GRADIENTS, getWalletGradient } from '../utils/gradients';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -11,19 +12,6 @@ interface WalletModalProps {
   walletToEdit?: Wallet | null;
   existingWallets: Wallet[];
 }
-
-const COLOR_OPTIONS = [
-  '#4f46e5', // Indigo
-  '#0ea5e9', // Sky
-  '#10b981', // Emerald
-  '#eab308', // Amber
-  '#f97316', // Orange
-  '#ef4444', // Red
-  '#db2777', // Pink
-  '#8b5cf6', // Violet
-  '#14b8a6', // Teal
-  '#64748b', // Slate
-];
 
 const ICON_OPTIONS: Wallet['icon'][] = [
   'wallet',
@@ -43,7 +31,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<Wallet['icon']>('wallet');
-  const [color, setColor] = useState(COLOR_OPTIONS[0]);
+  const [color, setColor] = useState(WALLET_GRADIENTS[0].color);
   const [balanceDisplay, setBalanceDisplay] = useState('0');
   const [description, setDescription] = useState('');
   const [cloneFromWalletId, setCloneFromWalletId] = useState<string>('default');
@@ -59,7 +47,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     } else {
       setName('');
       setIcon('wallet');
-      setColor(COLOR_OPTIONS[Math.floor(Math.random() * COLOR_OPTIONS.length)]);
+      setColor(WALLET_GRADIENTS[Math.floor(Math.random() * WALLET_GRADIENTS.length)].color);
       setBalanceDisplay('0');
       setDescription('');
       setCloneFromWalletId(existingWallets.length > 0 ? existingWallets[0].id : 'default');
@@ -127,7 +115,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-xs"
-              style={{ backgroundColor: color }}
+              style={{ background: getWalletGradient(color) }}
             >
               <WalletIcon icon={icon} className="w-5 h-5" />
             </div>
@@ -210,23 +198,32 @@ export const WalletModal: React.FC<WalletModalProps> = ({
             </div>
           </div>
 
-          {/* Color Selector */}
+          {/* Color / Gradient Selector */}
           <div>
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-              Màu sắc đại diện
+              Màu Gradient Đại Diện
             </label>
-            <div className="flex flex-wrap gap-2">
-              {COLOR_OPTIONS.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className="w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110"
-                  style={{ backgroundColor: c }}
-                >
-                  {color === c && <Check className="w-4 h-4 text-white stroke-[3]" />}
-                </button>
-              ))}
+            <div className="grid grid-cols-6 gap-2">
+              {WALLET_GRADIENTS.map((item) => {
+                const isSelected =
+                  color === item.color || color === item.gradient;
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    onClick={() => setColor(item.color)}
+                    title={item.label}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-2xs hover:scale-105 ${
+                      isSelected ? 'ring-2 ring-indigo-500 ring-offset-2' : ''
+                    }`}
+                    style={{ background: item.gradient }}
+                  >
+                    {isSelected && (
+                      <Check className="w-4 h-4 text-white stroke-[3] drop-shadow-xs" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
