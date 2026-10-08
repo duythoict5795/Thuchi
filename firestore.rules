@@ -27,5 +27,14 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(docId);
       }
     }
+
+    // Device cloud backup and sync container (works for web and mobile browsers)
+    match /device_sync/{deviceId} {
+      allow read, write: if isValidId(deviceId);
+
+      match /finance/{docId} {
+        allow read, write: if isValidId(deviceId) && isValidId(docId);
+      }
+    }
   }
 }

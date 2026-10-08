@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, AlertCircle } from 'lucide-react';
 import { Transaction, Wallet } from '../types/finance';
 import { formatNumber, parseFormattedNumber } from '../utils/storage';
 
@@ -25,6 +25,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [category, setCategory] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (transaction) {
@@ -35,6 +36,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setCategory(transaction.category);
       setNote(transaction.note);
       setDate(transaction.date);
+      setFormError(null);
     }
   }, [transaction, isOpen, wallets]);
 
@@ -43,20 +45,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const currentWallet = wallets.find((w) => w.id === walletId) || wallets[0];
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormError(null);
     const rawDigits = e.target.value.replace(/\D/g, '');
     setAmountDisplay(formatNumber(rawDigits ? parseInt(rawDigits, 10) : 0));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     const amount = parseFormattedNumber(amountDisplay);
     if (amount <= 0) {
-      alert('Vui lòng nhập số tiền lớn hơn 0');
+      setFormError('Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
 
     if (type === 'transfer' && walletId === toWalletId) {
-      alert('Ví nguồn và ví đích phải khác nhau!');
+      setFormError('Ví nguồn và ví đích phải khác nhau!');
       return;
     }
 
@@ -270,6 +274,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               />
             </div>
           </div>
+
+          {/* Form Error */}
+          {formError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
 
           {/* Buttons */}
           <div className="flex gap-3 pt-3 border-t border-slate-100">

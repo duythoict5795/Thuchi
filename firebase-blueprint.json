@@ -61,6 +61,10 @@
     "/users/{userId}/finance/{docId}": {
       "schema": "FinanceData",
       "description": "User personal finance data container"
+    },
+    "/device_sync/{deviceId}/finance/{docId}": {
+      "schema": "FinanceData",
+      "description": "Device-level cloud sync container for offline/guest users"
     }
   }
 }

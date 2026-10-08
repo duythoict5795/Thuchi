@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>Đang chuyển hướng...</title>
+    <script>
+      // Single Page App redirect for GitHub Pages
+      // When a 404 happens (e.g. from subpath), redirect back to the home base
+      var pathSegments = window.location.pathname.split('/');
+      // If deployed on github.io/<repo>/, redirect to /<repo>/
+      var repoSegment = pathSegments.length > 1 && pathSegments[1] ? '/' + pathSegments[1] + '/' : '/';
+      window.location.replace(repoSegment);
+    </script>
+  </head>
+  <body>
+    <p>Đang chuyển hướng về trang chủ...</p>
+  </body>
+</html>

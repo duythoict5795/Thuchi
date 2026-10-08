@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, FolderPlus, Copy, Check, X } from 'lucide-react';
+import { Plus, Trash2, FolderPlus, Copy, Check, X, AlertCircle } from 'lucide-react';
 import { Wallet, ExpenseGroup } from '../types/finance';
 import { WalletIcon } from './WalletIcon';
 import { getWalletGradient } from '../utils/gradients';
+import { ConfirmModal } from './ConfirmModal';
 
 interface CategoryManagerProps {
   wallets: Wallet[];
@@ -28,6 +29,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
   // Modals for adding income cat, group, category to group
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
   const [newIncomeCat, setNewIncomeCat] = useState('');
+  const [incomeError, setIncomeError] = useState<string | null>(null);
 
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
@@ -35,9 +37,25 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const [activeGroupIdForCat, setActiveGroupIdForCat] = useState<string | null>(null);
   const [newCatInGroup, setNewCatInGroup] = useState('');
+  const [catInGroupError, setCatInGroupError] = useState<string | null>(null);
 
   const [copySourceWalletId, setCopySourceWalletId] = useState<string>('');
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+
+  // Custom confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const activeWallet = wallets.find((w) => w.id === selectedWalletId) || wallets[0];
   if (!activeWallet) return null;
@@ -45,14 +63,16 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
   // Add Income Category
   const handleAddIncome = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newIncomeCat.trim()) return;
-    if (activeWallet.incomeCategories.includes(newIncomeCat.trim())) {
-      alert('Danh mục này đã tồn tại!');
+    setIncomeError(null);
+    const trimmed = newIncomeCat.trim();
+    if (!trimmed) return;
+    if (activeWallet.incomeCategories.includes(trimmed)) {
+      setIncomeError('Danh mục này đã tồn tại trong ví!');
       return;
     }
     const updated = {
       ...activeWallet,
-      incomeCategories: [...activeWallet.incomeCategories, newIncomeCat.trim()],
+      incomeCategories: [...activeWallet.incomeCategories, trimmed],
     };
     onUpdateWallet(updated);
     setNewIncomeCat('');
@@ -61,11 +81,20 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   // Remove Income Category
   const handleRemoveIncome = (catName: string) => {
-    const updated = {
-      ...activeWallet,
-      incomeCategories: activeWallet.incomeCategories.filter((c) => c !== catName),
-    };
-    onUpdateWallet(updated);
+    setConfirmDialog({
+      isOpen: true,
+      title: `Xóa nguồn thu "${catName}"`,
+      message: `Bạn có chắc chắn muốn xóa nguồn thu nhập "${catName}" khỏi ví "${activeWallet.name}"?`,
+      confirmText: 'Xóa mục này',
+      variant: 'danger',
+      onConfirm: () => {
+        const updated = {
+          ...activeWallet,
+          incomeCategories: activeWallet.incomeCategories.filter((c) => c !== catName),
+        };
+        onUpdateWallet(updated);
+      },
+    });
   };
 
   // Add Expense Group
@@ -89,24 +118,36 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   // Remove Expense Group
   const handleRemoveGroup = (groupId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa nhóm chi tiêu này?')) return;
-    const updated = {
-      ...activeWallet,
-      expenseGroups: activeWallet.expenseGroups.filter((g) => g.id !== groupId),
-    };
-    onUpdateWallet(updated);
+    const group = activeWallet.expenseGroups.find((g) => g.id === groupId);
+    const groupName = group ? group.name : 'này';
+    setConfirmDialog({
+      isOpen: true,
+      title: `Xóa nhóm "${groupName}"`,
+      message: `Tất cả danh mục trong nhóm "${groupName}" sẽ bị xóa. Bạn có chắc muốn xóa vĩnh viễn?`,
+      confirmText: 'Xóa nhóm chi',
+      variant: 'danger',
+      onConfirm: () => {
+        const updated = {
+          ...activeWallet,
+          expenseGroups: activeWallet.expenseGroups.filter((g) => g.id !== groupId),
+        };
+        onUpdateWallet(updated);
+      },
+    });
   };
 
   // Add Category to Group
   const handleAddCatToGroup = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatInGroup.trim() || !activeGroupIdForCat) return;
+    setCatInGroupError(null);
+    const trimmed = newCatInGroup.trim();
+    if (!trimmed || !activeGroupIdForCat) return;
 
     const group = activeWallet.expenseGroups.find((g) => g.id === activeGroupIdForCat);
     if (!group) return;
 
-    if (group.categories.includes(newCatInGroup.trim())) {
-      alert('Danh mục này đã có trong nhóm!');
+    if (group.categories.includes(trimmed)) {
+      setCatInGroupError('Danh mục này đã có trong nhóm!');
       return;
     }
 
@@ -114,7 +155,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
       if (g.id === activeGroupIdForCat) {
         return {
           ...g,
-          categories: [...g.categories, newCatInGroup.trim()],
+          categories: [...g.categories, trimmed],
         };
       }
       return g;
@@ -261,29 +302,43 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
         </div>
 
         {isAddIncomeOpen && (
-          <form onSubmit={handleAddIncome} className="flex gap-2 pt-1 animate-in fade-in">
-            <input
-              type="text"
-              value={newIncomeCat}
-              onChange={(e) => setNewIncomeCat(e.target.value)}
-              placeholder="VD: Lương, Thưởng, Bán hàng..."
-              autoFocus
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-            />
-            <button
-              type="submit"
-              className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"
-            >
-              Lưu
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsAddIncomeOpen(false)}
-              className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold"
-            >
-              Hủy
-            </button>
-          </form>
+          <div className="space-y-1.5 pt-1 animate-in fade-in">
+            <form onSubmit={handleAddIncome} className="flex gap-2">
+              <input
+                type="text"
+                value={newIncomeCat}
+                onChange={(e) => {
+                  setNewIncomeCat(e.target.value);
+                  if (incomeError) setIncomeError(null);
+                }}
+                placeholder="VD: Lương, Thưởng, Bán hàng..."
+                autoFocus
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+              />
+              <button
+                type="submit"
+                className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"
+              >
+                Lưu
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddIncomeOpen(false);
+                  setIncomeError(null);
+                }}
+                className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold"
+              >
+                Hủy
+              </button>
+            </form>
+            {incomeError && (
+              <p className="text-[11px] text-rose-600 flex items-center gap-1 font-semibold pl-1">
+                <AlertCircle className="w-3.5 h-3.5" />
+                {incomeError}
+              </p>
+            )}
+          </div>
         )}
 
         <div className="flex flex-wrap gap-2">
@@ -419,35 +474,50 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
 
               {/* Add category to this group */}
               {activeGroupIdForCat === group.id ? (
-                <form onSubmit={handleAddCatToGroup} className="flex gap-1.5 pt-1">
-                  <input
-                    type="text"
-                    value={newCatInGroup}
-                    onChange={(e) => setNewCatInGroup(e.target.value)}
-                    placeholder={`Thêm mục vào ${group.name}...`}
-                    autoFocus
-                    className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button
-                    type="submit"
-                    className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold"
-                  >
-                    Thêm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveGroupIdForCat(null)}
-                    className="px-2 py-1 text-xs text-slate-500 font-semibold"
-                  >
-                    Hủy
-                  </button>
-                </form>
+                <div className="space-y-1.5 pt-1">
+                  <form onSubmit={handleAddCatToGroup} className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={newCatInGroup}
+                      onChange={(e) => {
+                        setNewCatInGroup(e.target.value);
+                        if (catInGroupError) setCatInGroupError(null);
+                      }}
+                      placeholder={`Thêm mục vào ${group.name}...`}
+                      autoFocus
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold"
+                    >
+                      Thêm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveGroupIdForCat(null);
+                        setCatInGroupError(null);
+                      }}
+                      className="px-2 py-1 text-xs text-slate-500 font-semibold"
+                    >
+                      Hủy
+                    </button>
+                  </form>
+                  {catInGroupError && (
+                    <p className="text-[11px] text-rose-600 flex items-center gap-1 font-semibold pl-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {catInGroupError}
+                    </p>
+                  )}
+                </div>
               ) : (
                 <button
                   type="button"
                   onClick={() => {
                     setActiveGroupIdForCat(group.id);
                     setNewCatInGroup('');
+                    setCatInGroupError(null);
                   }}
                   className="w-full py-1.5 bg-white hover:bg-slate-100 rounded-lg border border-dashed border-slate-200 text-[11px] font-semibold text-slate-500 flex items-center justify-center gap-1 transition-colors"
                 >
@@ -510,6 +580,17 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Confirm Action Dialog */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        variant={confirmDialog.variant}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

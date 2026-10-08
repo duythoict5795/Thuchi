@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ArrowRightLeft } from 'lucide-react';
+import { X, ArrowRightLeft, AlertCircle } from 'lucide-react';
 import { Wallet, Transaction } from '../types/finance';
 import {
   formatVND,
@@ -40,6 +40,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   const [amountDisplay, setAmountDisplay] = useState('');
   const [note, setNote] = useState('Chuyển tiền nội bộ');
   const [date, setDate] = useState(getTodayDateString());
+  const [formError, setFormError] = useState<string | null>(null);
 
   if (!isOpen || wallets.length < 2) return null;
 
@@ -52,28 +53,32 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   const transferAmount = parseFormattedNumber(amountDisplay);
 
   const handleSwap = () => {
+    setFormError(null);
     const temp = fromWalletId;
     setFromWalletId(toWalletId);
     setToWalletId(temp);
   };
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormError(null);
     const raw = e.target.value.replace(/\D/g, '');
     setAmountDisplay(raw ? formatNumber(parseInt(raw, 10)) : '');
   };
 
   const setQuickAmount = (val: number) => {
+    setFormError(null);
     setAmountDisplay(formatNumber(val));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (transferAmount <= 0) {
-      alert('Vui lòng nhập số tiền hợp lệ');
+      setFormError('Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
     if (fromWalletId === toWalletId) {
-      alert('Ví nguồn và ví đích không được trùng nhau');
+      setFormError('Ví nguồn và ví đích không được trùng nhau');
       return;
     }
 
@@ -261,6 +266,14 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                   {formatVND(toBalance + transferAmount)}
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Error display */}
+          {formError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{formError}</span>
             </div>
           )}
 

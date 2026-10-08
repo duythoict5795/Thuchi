@@ -30,6 +30,10 @@ import {
   Database,
   CheckCircle2,
   Cloud,
+  User as UserIcon,
+  LogOut,
+  LogIn,
+  RotateCcw,
 } from 'lucide-react';
 
 import { AppState, Wallet, Transaction, ExpenseGroup } from './types/finance';
@@ -55,12 +59,16 @@ import { TransferModal } from './components/TransferModal';
 import { CategoryManager } from './components/CategoryManager';
 import { getWalletGradient } from './utils/gradients';
 import { AppLogo } from './components/AppLogo';
+import { ConfirmModal } from './components/ConfirmModal';
 import { loadAppStateFromDB } from './utils/db';
 import {
   initFirebaseService,
   syncStateToFirestore,
   loadStateFromFirestore,
   subscribeCloudStatus,
+  loginWithGoogle,
+  logoutGoogle,
+  CloudStatusPayload,
 } from './services/firebase';
 
 export default function App() {
@@ -82,12 +90,14 @@ export default function App() {
   }, []);
 
   // Firebase Cloud Database connection state
-  const [cloudStatus, setCloudStatus] = useState<{
-    online: boolean;
-    user: any;
-    lastSynced: Date | null;
-  }>({ online: false, user: null, lastSynced: null });
+  const [cloudStatus, setCloudStatus] = useState<CloudStatusPayload>({
+    online: true,
+    user: null,
+    deviceId: '',
+    lastSynced: null,
+  });
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState(false);
   const [cloudSyncFeedback, setCloudSyncFeedback] = useState<string | null>(null);
 
   // Initialize Cloud Database on boot and sync
@@ -96,31 +106,29 @@ export default function App() {
       setCloudStatus(status);
     });
 
-    initFirebaseService().then(async (user) => {
-      if (user) {
-        try {
-          const cloudData = await loadStateFromFirestore();
-          if (cloudData && cloudData.wallets && cloudData.wallets.length > 0) {
-            setState((current) => {
-              if (
-                JSON.stringify(current) === JSON.stringify(DEFAULT_STATE) ||
-                (cloudData.transactions && cloudData.transactions.length >= current.transactions.length)
-              ) {
-                const merged: AppState = {
-                  ...current,
-                  wallets: (cloudData.wallets as Wallet[]) || current.wallets,
-                  transactions: (cloudData.transactions as Transaction[]) || current.transactions,
-                  activeWalletId: cloudData.activeWalletId || current.activeWalletId,
-                };
-                saveAppState(merged);
-                return merged;
-              }
-              return current;
-            });
-          }
-        } catch (err) {
-          console.warn('Initial cloud load info:', err);
+    initFirebaseService().then(async () => {
+      try {
+        const cloudData = await loadStateFromFirestore();
+        if (cloudData && cloudData.wallets && cloudData.wallets.length > 0) {
+          setState((current) => {
+            if (
+              JSON.stringify(current) === JSON.stringify(DEFAULT_STATE) ||
+              (cloudData.transactions && cloudData.transactions.length >= current.transactions.length)
+            ) {
+              const merged: AppState = {
+                ...current,
+                wallets: (cloudData.wallets as Wallet[]) || current.wallets,
+                transactions: (cloudData.transactions as Transaction[]) || current.transactions,
+                activeWalletId: cloudData.activeWalletId || current.activeWalletId,
+              };
+              saveAppState(merged);
+              return merged;
+            }
+            return current;
+          });
         }
+      } catch (err) {
+        console.warn('Initial cloud load info:', err);
       }
     });
 
@@ -137,7 +145,7 @@ export default function App() {
       if (ok) {
         setCloudSyncFeedback('Đã đồng bộ lên CSDL Đám Mây thành công!');
       } else {
-        setCloudSyncFeedback('Không thể kết nối máy chủ hoặc đang ngoại tuyến.');
+        setCloudSyncFeedback('Không thể kết nối máy chủ ngoại tuyến. Vui lòng kiểm tra mạng.');
       }
     } catch {
       setCloudSyncFeedback('Lỗi đồng bộ cơ sở dữ liệu.');
@@ -145,6 +153,31 @@ export default function App() {
       setIsCloudSyncing(false);
       setTimeout(() => setCloudSyncFeedback(null), 3500);
     }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoggingIn(true);
+    setCloudSyncFeedback(null);
+    try {
+      const user = await loginWithGoogle();
+      if (user) {
+        setCloudSyncFeedback(`Đã kết nối tài khoản: ${user.displayName || user.email}`);
+        await syncStateToFirestore(state);
+      }
+    } catch (err: any) {
+      if (err?.code !== 'auth/popup-closed-by-user') {
+        setCloudSyncFeedback('Đăng nhập Google không thành công. Vui lòng thử lại.');
+      }
+    } finally {
+      setIsGoogleLoggingIn(false);
+      setTimeout(() => setCloudSyncFeedback(null), 3500);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    await logoutGoogle();
+    setCloudSyncFeedback('Đã đăng xuất tài khoản Google.');
+    setTimeout(() => setCloudSyncFeedback(null), 3500);
   };
 
   // Active navigation tab
@@ -209,9 +242,26 @@ export default function App() {
     }, 2800);
   };
 
-  // Save state to localStorage whenever it changes
+  // Custom Confirm Dialog Modal
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  // Save state to localStorage and Firestore whenever it changes
   useEffect(() => {
     saveAppState(state);
+    syncStateToFirestore(state);
   }, [state]);
 
   // Keep quick form wallet ID valid
@@ -290,7 +340,7 @@ export default function App() {
     if (!wallet) return;
 
     if (state.wallets.length <= 1) {
-      alert('Hệ thống cần ít nhất một ví để hoạt động!');
+      showToast('Hệ thống cần ít nhất một ví để hoạt động!');
       return;
     }
 
@@ -300,26 +350,33 @@ export default function App() {
 
     const confirmMsg =
       txCount > 0
-        ? `Ví "${wallet.name}" đang có ${txCount} giao dịch liên quan. Xóa ví sẽ xóa luôn các giao dịch này. Bạn có chắc chắn muốn xóa?`
+        ? `Ví "${wallet.name}" đang có ${txCount} giao dịch liên quan. Xóa ví sẽ xóa luôn các giao dịch này.`
         : `Bạn có chắc muốn xóa ví "${wallet.name}"?`;
 
-    if (!confirm(confirmMsg)) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: `Xóa ví "${wallet.name}"`,
+      message: `${confirmMsg} Bạn có chắc chắn muốn tiếp tục?`,
+      confirmText: 'Xóa ví này',
+      variant: 'danger',
+      onConfirm: () => {
+        setState((prev) => ({
+          ...prev,
+          wallets: prev.wallets.filter((w) => w.id !== walletId),
+          transactions: prev.transactions.filter(
+            (t) => t.walletId !== walletId && t.toWalletId !== walletId
+          ),
+        }));
 
-    setState((prev) => ({
-      ...prev,
-      wallets: prev.wallets.filter((w) => w.id !== walletId),
-      transactions: prev.transactions.filter(
-        (t) => t.walletId !== walletId && t.toWalletId !== walletId
-      ),
-    }));
-
-    if (selectedWalletId === walletId) {
-      setSelectedWalletId('all');
-    }
-    if (selectedSettingsWalletId === walletId) {
-      setSelectedSettingsWalletId(null);
-    }
-    showToast(`Đã xóa ví "${wallet.name}"!`);
+        if (selectedWalletId === walletId) {
+          setSelectedWalletId('all');
+        }
+        if (selectedSettingsWalletId === walletId) {
+          setSelectedSettingsWalletId(null);
+        }
+        showToast(`Đã xóa ví "${wallet.name}" thành công!`);
+      },
+    });
   };
 
   // ----------------------------------------------------
@@ -329,7 +386,7 @@ export default function App() {
     e.preventDefault();
     const amount = parseFormattedNumber(quickAmountDisplay);
     if (amount <= 0) {
-      alert('Vui lòng nhập số tiền lớn hơn 0');
+      showToast('Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
 
@@ -337,7 +394,7 @@ export default function App() {
       const fromId = quickWalletId;
       const toId = quickToWalletId || state.wallets.find((w) => w.id !== fromId)?.id;
       if (!toId || fromId === toId) {
-        alert('Vui lòng chọn ví nguồn và ví đích khác nhau');
+        showToast('Vui lòng chọn ví nguồn và ví đích khác nhau');
         return;
       }
 
@@ -360,6 +417,7 @@ export default function App() {
         ...prev,
         transactions: [newTx, ...prev.transactions],
       }));
+      showToast('Đã lưu chuyển khoản!');
     } else {
       const newTx: Transaction = {
         id: `t-${Date.now()}`,
@@ -376,6 +434,7 @@ export default function App() {
         ...prev,
         transactions: [newTx, ...prev.transactions],
       }));
+      showToast(quickType === 'income' ? 'Đã thêm khoản thu!' : 'Đã thêm khoản chi!');
     }
 
     setQuickAmountDisplay('');
@@ -387,14 +446,27 @@ export default function App() {
       ...prev,
       transactions: prev.transactions.map((t) => (t.id === updatedTx.id ? updatedTx : t)),
     }));
+    showToast('Đã cập nhật giao dịch!');
   };
 
   const handleDeleteTransaction = (txId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa giao dịch này vĩnh viễn?')) return;
-    setState((prev) => ({
-      ...prev,
-      transactions: prev.transactions.filter((t) => t.id !== txId),
-    }));
+    const tx = state.transactions.find((t) => t.id === txId);
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa giao dịch',
+      message: tx
+        ? `Bạn có chắc muốn xóa giao dịch "${tx.category} - ${formatVND(tx.amount)}"? Hành động này không thể hoàn tác.`
+        : 'Bạn có chắc muốn xóa giao dịch này vĩnh viễn?',
+      confirmText: 'Xóa giao dịch',
+      variant: 'danger',
+      onConfirm: () => {
+        setState((prev) => ({
+          ...prev,
+          transactions: prev.transactions.filter((t) => t.id !== txId),
+        }));
+        showToast('Đã xóa giao dịch thành công!');
+      },
+    });
   };
 
   const handleExecuteTransfer = (transferData: Omit<Transaction, 'id' | 'createdAt'>) => {
@@ -407,6 +479,7 @@ export default function App() {
       ...prev,
       transactions: [newTx, ...prev.transactions],
     }));
+    showToast('Đã chuyển tiền giữa các ví thành công!');
   };
 
   // ----------------------------------------------------
@@ -422,6 +495,7 @@ export default function App() {
     a.download = `quan_ly_thu_chi_backup_${getTodayDateString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    showToast('Đã tải tệp sao lưu JSON!');
   };
 
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -434,22 +508,54 @@ export default function App() {
         const parsed = JSON.parse(event.target?.result as string);
         if (parsed.wallets && Array.isArray(parsed.wallets)) {
           setState(parsed);
-          alert('Khôi phục dữ liệu thành công!');
+          showToast('Khôi phục dữ liệu thành công!');
         } else {
-          alert('Tệp dữ liệu không hợp lệ!');
+          showToast('Tệp dữ liệu không hợp lệ!');
         }
       } catch (err) {
-        alert('Lỗi đọc tệp JSON!');
+        showToast('Lỗi đọc tệp JSON!');
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleResetData = () => {
-    if (confirm('Bạn có chắc muốn đặt lại toàn bộ dữ liệu về mặc định ban đầu? Tất cả giao dịch sẽ bị xóa.')) {
-      setState(DEFAULT_STATE);
-      setSelectedWalletId('all');
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Đặt lại dữ liệu mặc định',
+      message: 'Toàn bộ ví và dữ liệu thu chi sẽ được đưa về mẫu dữ liệu mặc định ban đầu. Bạn có chắc chắn muốn thực hiện?',
+      confirmText: 'Đặt lại mặc định',
+      variant: 'danger',
+      onConfirm: () => {
+        const freshDefault: AppState = JSON.parse(JSON.stringify(DEFAULT_STATE));
+        setState(freshDefault);
+        saveAppState(freshDefault);
+        setSelectedWalletId('all');
+        showToast('Đã đặt lại dữ liệu mặc định ban đầu thành công!');
+      },
+    });
+  };
+
+  const handleClearAllTransactions = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa toàn bộ lịch sử giao dịch',
+      message: 'Tất cả các giao dịch thu/chi sẽ bị xóa sạch, các ví và danh mục của bạn vẫn được giữ nguyên. Bạn có chắc chắn?',
+      confirmText: 'Xóa sạch giao dịch',
+      variant: 'danger',
+      onConfirm: () => {
+        setState((prev) => {
+          const cleared: AppState = {
+            ...prev,
+            transactions: [],
+          };
+          saveAppState(cleared);
+          return cleared;
+        });
+        showToast('Đã xóa sạch toàn bộ lịch sử giao dịch!');
+      },
+    });
   };
 
   // Toggle tree expand/collapse (Mặc định chi tiết các tháng không hiện ra, nhấn vào mới hiện ra)
@@ -1889,12 +1995,23 @@ export default function App() {
                 </label>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
                 <button
-                  onClick={handleResetData}
-                  className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                  type="button"
+                  onClick={handleClearAllTransactions}
+                  className="w-full py-3 px-4 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-colors flex items-center justify-center gap-2 border border-amber-200/70 active:scale-[0.99]"
                 >
-                  Đặt lại dữ liệu mặc định
+                  <Trash2 className="w-4 h-4 text-amber-600" />
+                  <span>Xóa tất cả giao dịch (Giữ nguyên ví)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetData}
+                  className="w-full py-3 px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-colors flex items-center justify-center gap-2 border border-rose-200/70 active:scale-[0.99]"
+                >
+                  <RotateCcw className="w-4 h-4 text-rose-600" />
+                  <span>Đặt lại dữ liệu mặc định ban đầu</span>
                 </button>
               </div>
             </div>
@@ -1920,7 +2037,7 @@ export default function App() {
               </div>
 
               {/* Cloud Database (Firebase Firestore) Card */}
-              <div className="bg-white/90 rounded-2xl p-4 border border-indigo-100 space-y-3">
+              <div className="bg-white/90 rounded-2xl p-4 border border-indigo-100 space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
@@ -1930,23 +2047,64 @@ export default function App() {
                       <h4 className="text-xs font-bold text-slate-800">Cơ sở dữ liệu Đám mây (Firebase Firestore)</h4>
                       <p className="text-[10px] text-slate-500">
                         {cloudStatus.online
-                          ? 'Đã kết nối • Tự động sao lưu & đồng bộ thời gian thực'
-                          : 'Đang kết nối cơ sở dữ liệu đám mây...'}
+                          ? 'Máy chủ hoạt động bình thường • Tự động sao lưu'
+                          : 'Đang kết nối máy chủ đám mây...'}
                       </p>
                     </div>
                   </div>
                   <span
                     className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
                       cloudStatus.online
-                        ? 'bg-sky-100 text-sky-700'
+                        ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-amber-100 text-amber-700'
                     }`}
                   >
-                    {cloudStatus.online ? 'Cloud Online' : 'Connecting'}
+                    {cloudStatus.online ? 'Máy chủ Online' : 'Đang kết nối'}
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+                {/* Google Account Status & Login */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
+                  {cloudStatus.user ? (
+                    <>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[11px] font-bold shrink-0">
+                          {cloudStatus.user.email?.charAt(0).toUpperCase() || 'U'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-slate-800 truncate">
+                            {cloudStatus.user.displayName || cloudStatus.user.email}
+                          </p>
+                          <p className="text-[10px] text-slate-500 truncate">Tài khoản Google đã kết nối</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleGoogleLogout}
+                        className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                      >
+                        <LogOut className="w-3 h-3" />
+                        Đăng xuất
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-slate-700">Đồng bộ theo thiết bị này</p>
+                        <p className="text-[10px] text-slate-400">Đăng nhập Google để đồng bộ đa thiết bị</p>
+                      </div>
+                      <button
+                        onClick={handleGoogleLogin}
+                        disabled={isGoogleLoggingIn}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 font-bold text-xs shadow-2xs transition-colors shrink-0 disabled:opacity-50"
+                      >
+                        <LogIn className="w-3.5 h-3.5 text-indigo-600" />
+                        {isGoogleLoggingIn ? 'Đang mở...' : 'Đăng nhập Google'}
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px] text-slate-500">
                   <span>
                     Đồng bộ gần nhất:{' '}
                     <strong className="text-slate-700">
@@ -1966,7 +2124,13 @@ export default function App() {
                 </div>
 
                 {cloudSyncFeedback && (
-                  <div className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-100">
+                  <div
+                    className={`text-[11px] font-semibold px-3 py-2 rounded-xl border ${
+                      cloudSyncFeedback.includes('thành công') || cloudSyncFeedback.includes('kết nối')
+                        ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+                        : 'text-amber-800 bg-amber-50 border-amber-100'
+                    }`}
+                  >
                     {cloudSyncFeedback}
                   </div>
                 )}
@@ -2104,6 +2268,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Reusable Confirm Modal Dialog */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        variant={confirmDialog.variant}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }
