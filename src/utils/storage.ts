@@ -1,5 +1,7 @@
 import { AppState, Wallet, Transaction } from '../types/finance';
 import { USER_WALLETS, USER_TRANSACTIONS } from '../data/userInitialData';
+import { saveAppStateToDB } from './db';
+import { syncStateToFirestore } from '../services/firebase';
 
 export const STORAGE_KEY = 'quanlythuchi_v3_user_wallets';
 
@@ -127,4 +129,8 @@ export function saveAppState(state: AppState): void {
   } catch (err) {
     console.error('Error saving finance state:', err);
   }
+  // Fast async database storage (IndexedDB)
+  saveAppStateToDB(state).catch(() => {});
+  // Cloud Database synchronization (Firebase Firestore)
+  syncStateToFirestore(state).catch(() => {});
 }

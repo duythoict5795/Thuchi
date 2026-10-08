@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information and metadata",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "User authentication UID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when account was created"
+        }
+      },
+      "required": ["uid"]
+    },
+    "FinanceData": {
+      "title": "FinanceData",
+      "description": "User personal finance records including wallets and transaction lists",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the owner user"
+        },
+        "wallets": {
+          "type": "array",
+          "description": "List of user financial wallets"
+        },
+        "transactions": {
+          "type": "array",
+          "description": "List of user income, expense, and transfer transactions"
+        },
+        "activeWalletId": {
+          "type": "string",
+          "description": "ID of current active wallet"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of the last update"
+        }
+      },
+      "required": ["ownerId", "wallets", "transactions"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User account profile document"
+    },
+    "/users/{userId}/finance/{docId}": {
+      "schema": "FinanceData",
+      "description": "User personal finance data container"
+    }
+  }
+}

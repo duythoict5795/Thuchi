@@ -27,6 +27,9 @@ import {
   ArrowDownLeft,
   RefreshCw,
   SlidersHorizontal,
+  Database,
+  CheckCircle2,
+  Cloud,
 } from 'lucide-react';
 
 import { AppState, Wallet, Transaction, ExpenseGroup } from './types/finance';
@@ -51,9 +54,98 @@ import { TransactionModal } from './components/TransactionModal';
 import { TransferModal } from './components/TransferModal';
 import { CategoryManager } from './components/CategoryManager';
 import { getWalletGradient } from './utils/gradients';
+import { AppLogo } from './components/AppLogo';
+import { loadAppStateFromDB } from './utils/db';
+import {
+  initFirebaseService,
+  syncStateToFirestore,
+  loadStateFromFirestore,
+  subscribeCloudStatus,
+} from './services/firebase';
 
 export default function App() {
   const [state, setState] = useState<AppState>(loadAppState);
+
+  // Load faster from IndexedDB database on startup
+  useEffect(() => {
+    loadAppStateFromDB().then((dbState) => {
+      if (dbState && dbState.wallets && dbState.wallets.length > 0) {
+        setState((current) => {
+          // If already modified in current session, keep current, otherwise sync
+          if (JSON.stringify(current) === JSON.stringify(DEFAULT_STATE)) {
+            return dbState;
+          }
+          return current;
+        });
+      }
+    });
+  }, []);
+
+  // Firebase Cloud Database connection state
+  const [cloudStatus, setCloudStatus] = useState<{
+    online: boolean;
+    user: any;
+    lastSynced: Date | null;
+  }>({ online: false, user: null, lastSynced: null });
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [cloudSyncFeedback, setCloudSyncFeedback] = useState<string | null>(null);
+
+  // Initialize Cloud Database on boot and sync
+  useEffect(() => {
+    const unsub = subscribeCloudStatus((status) => {
+      setCloudStatus(status);
+    });
+
+    initFirebaseService().then(async (user) => {
+      if (user) {
+        try {
+          const cloudData = await loadStateFromFirestore();
+          if (cloudData && cloudData.wallets && cloudData.wallets.length > 0) {
+            setState((current) => {
+              if (
+                JSON.stringify(current) === JSON.stringify(DEFAULT_STATE) ||
+                (cloudData.transactions && cloudData.transactions.length >= current.transactions.length)
+              ) {
+                const merged: AppState = {
+                  ...current,
+                  wallets: (cloudData.wallets as Wallet[]) || current.wallets,
+                  transactions: (cloudData.transactions as Transaction[]) || current.transactions,
+                  activeWalletId: cloudData.activeWalletId || current.activeWalletId,
+                };
+                saveAppState(merged);
+                return merged;
+              }
+              return current;
+            });
+          }
+        } catch (err) {
+          console.warn('Initial cloud load info:', err);
+        }
+      }
+    });
+
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  const handleManualCloudSync = async () => {
+    setIsCloudSyncing(true);
+    setCloudSyncFeedback(null);
+    try {
+      const ok = await syncStateToFirestore(state);
+      if (ok) {
+        setCloudSyncFeedback('Đã đồng bộ lên CSDL Đám Mây thành công!');
+      } else {
+        setCloudSyncFeedback('Không thể kết nối máy chủ hoặc đang ngoại tuyến.');
+      }
+    } catch {
+      setCloudSyncFeedback('Lỗi đồng bộ cơ sở dữ liệu.');
+    } finally {
+      setIsCloudSyncing(false);
+      setTimeout(() => setCloudSyncFeedback(null), 3500);
+    }
+  };
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<'home' | 'analysis' | 'history' | 'settings'>('home');
@@ -606,13 +698,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-24">
       {/* ----------------- TOP APP BAR ----------------- */}
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 shadow-2xs">
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-2.5 shadow-2xs">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-base font-bold text-slate-900 tracking-tight">
-              Quản Lý Thu Chi
-            </h1>
-          </div>
+          <AppLogo size="sm" showText={true} />
 
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl tabular-nums">
@@ -1808,6 +1896,92 @@ export default function App() {
                 >
                   Đặt lại dữ liệu mặc định
                 </button>
+              </div>
+            </div>
+
+            {/* SECTION 4: Kết nối Cơ sở Dữ liệu & Logo Thương hiệu */}
+            <div className="bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/60 rounded-3xl p-5 shadow-2xs border border-indigo-100/80 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Cơ Sở Dữ Liệu Tốc Độ Cao</h3>
+                    <p className="text-[11px] font-medium text-emerald-600 flex items-center gap-1 mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      IndexedDB Local Engine (Truy xuất siêu tốc)
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                  Turbo Mode
+                </span>
+              </div>
+
+              {/* Cloud Database (Firebase Firestore) Card */}
+              <div className="bg-white/90 rounded-2xl p-4 border border-indigo-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
+                      <Cloud className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800">Cơ sở dữ liệu Đám mây (Firebase Firestore)</h4>
+                      <p className="text-[10px] text-slate-500">
+                        {cloudStatus.online
+                          ? 'Đã kết nối • Tự động sao lưu & đồng bộ thời gian thực'
+                          : 'Đang kết nối cơ sở dữ liệu đám mây...'}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                      cloudStatus.online
+                        ? 'bg-sky-100 text-sky-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {cloudStatus.online ? 'Cloud Online' : 'Connecting'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+                  <span>
+                    Đồng bộ gần nhất:{' '}
+                    <strong className="text-slate-700">
+                      {cloudStatus.lastSynced
+                        ? cloudStatus.lastSynced.toLocaleTimeString('vi-VN')
+                        : 'Vừa xong'}
+                    </strong>
+                  </span>
+                  <button
+                    onClick={handleManualCloudSync}
+                    disabled={isCloudSyncing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold text-xs transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+                    {isCloudSyncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}
+                  </button>
+                </div>
+
+                {cloudSyncFeedback && (
+                  <div className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-100">
+                    {cloudSyncFeedback}
+                  </div>
+                )}
+              </div>
+
+              <div className="text-xs text-slate-600 leading-relaxed bg-white/80 rounded-2xl p-3 border border-indigo-50 space-y-1">
+                <p>• Dữ liệu tải tức thì và không bị giật lag khi chuyển đổi ví.</p>
+                <p>• Đồng bộ 2 lớp: Lưu cục bộ siêu tốc (IndexedDB) và sao lưu đám mây an toàn (Firestore).</p>
+                <p>• Hoạt động mượt mà cả khi offline hoặc mạng yếu.</p>
+              </div>
+
+              {/* App Brand Logo Footer */}
+              <div className="pt-3 border-t border-indigo-100/60 flex items-center justify-between">
+                <AppLogo size="sm" showText={true} />
+                <span className="text-[10px] font-bold text-slate-600">v3.5.0 Cloud Pro</span>
               </div>
             </div>
           </div>
