@@ -34,4 +34,5 @@ export interface AppState {
   wallets: Wallet[];
   transactions: Transaction[];
   activeWalletId: string; // 'all' for Ví Tổng Hợp, or wallet.id
+  summaryWalletIds?: string[]; // Danh sách ID các ví được tích chọn tính vào Ví Tổng Hợp
 }

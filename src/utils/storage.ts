@@ -15,12 +15,18 @@ export function formatVND(amount: number): string {
 
 export function formatNumber(num: number): string {
   if (isNaN(num)) return '0';
-  return Math.abs(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const isNegative = num < 0;
+  const formatted = Math.abs(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return isNegative ? `-${formatted}` : formatted;
 }
 
 export function parseFormattedNumber(str: string): number {
+  if (!str) return 0;
+  const isNegative = str.trim().startsWith('-');
   const clean = str.replace(/[^\d]/g, '');
-  return clean ? parseInt(clean, 10) : 0;
+  if (!clean) return 0;
+  const val = parseInt(clean, 10);
+  return isNegative ? -val : val;
 }
 
 export function getTodayDateString(): string {
@@ -64,25 +70,58 @@ export function calculateWalletBalance(walletId: string, wallets: Wallet[], tran
   return balance;
 }
 
-export function calculateTotalBalance(wallets: Wallet[], transactions: Transaction[]): number {
-  return wallets.reduce((total, wallet) => {
+export function calculateTotalBalance(
+  wallets: Wallet[],
+  transactions: Transaction[],
+  summaryWalletIds?: string[]
+): number {
+  const targetWallets =
+    summaryWalletIds && summaryWalletIds.length > 0
+      ? wallets.filter((w) => summaryWalletIds.includes(w.id))
+      : wallets;
+
+  return targetWallets.reduce((total, wallet) => {
     return total + calculateWalletBalance(wallet.id, wallets, transactions);
   }, 0);
 }
 
-export function getMonthStats(monthStr: string, walletId: string, transactions: Transaction[]) {
+export function getMonthStats(
+  monthStr: string,
+  walletId: string,
+  transactions: Transaction[],
+  summaryWalletIds?: string[]
+) {
   let income = 0;
   let expense = 0;
+
+  const includedSet =
+    summaryWalletIds && summaryWalletIds.length > 0 ? new Set(summaryWalletIds) : null;
 
   for (const t of transactions) {
     if (!t.date.startsWith(monthStr)) continue;
 
     if (walletId === 'all') {
-      // Ví Tổng Hợp: chuyển khoản nội bộ không đổi tổng tài sản
+      // Ví Tổng Hợp: chỉ tính các ví được tích chọn trong summaryWalletIds
+      const isSourceIncluded = includedSet ? includedSet.has(t.walletId) : true;
+      const isTargetIncluded = t.toWalletId
+        ? includedSet
+          ? includedSet.has(t.toWalletId)
+          : true
+        : false;
+
       if (t.type === 'income') {
-        income += t.amount;
+        if (isSourceIncluded) income += t.amount;
       } else if (t.type === 'expense') {
-        expense += t.amount;
+        if (isSourceIncluded) expense += t.amount;
+      } else if (t.type === 'transfer') {
+        // Chuyển tiền giữa ví được tính và ví bị loại trừ:
+        // Chuyển từ ví được tính sang ví bị loại trừ -> tiền ra khỏi tổng hợp
+        // Chuyển từ ví bị loại trừ vào ví được tính -> tiền vào tổng hợp
+        if (isSourceIncluded && !isTargetIncluded) {
+          expense += t.amount;
+        } else if (!isSourceIncluded && isTargetIncluded) {
+          income += t.amount;
+        }
       }
     } else {
       // Ví cụ thể:
@@ -107,6 +146,7 @@ export const DEFAULT_STATE: AppState = {
   activeWalletId: 'w-cash',
   wallets: USER_WALLETS,
   transactions: USER_TRANSACTIONS,
+  summaryWalletIds: USER_WALLETS.map((w) => w.id),
 };
 
 export function loadAppState(): AppState {
@@ -116,6 +156,9 @@ export function loadAppState(): AppState {
     const parsed = JSON.parse(raw);
     if (!parsed.wallets || !Array.isArray(parsed.wallets) || parsed.wallets.length === 0) {
       return DEFAULT_STATE;
+    }
+    if (!parsed.summaryWalletIds || !Array.isArray(parsed.summaryWalletIds)) {
+      parsed.summaryWalletIds = parsed.wallets.map((w: Wallet) => w.id);
     }
     return parsed;
   } catch {

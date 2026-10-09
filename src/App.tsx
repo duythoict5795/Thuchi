@@ -34,6 +34,7 @@ import {
   LogOut,
   LogIn,
   RotateCcw,
+  UserCheck,
 } from 'lucide-react';
 
 import { AppState, Wallet, Transaction, ExpenseGroup } from './types/finance';
@@ -104,6 +105,7 @@ function getCleanDefaultState(): AppState {
     wallets: [cleanDefaultWallet],
     transactions: [],
     activeWalletId: 'w-cash',
+    summaryWalletIds: ['w-cash'],
   };
 }
 
@@ -167,6 +169,8 @@ export default function App() {
             wallets: cloudData.wallets as Wallet[],
             transactions: (cloudData.transactions as Transaction[]) || [],
             activeWalletId: cloudData.activeWalletId || cloudData.wallets[0]?.id || 'w-cash',
+            summaryWalletIds:
+              cloudData.summaryWalletIds || (cloudData.wallets as Wallet[]).map((w) => w.id),
           };
           setState(fullState);
           saveAppState(fullState);
@@ -231,6 +235,8 @@ export default function App() {
           wallets: cloudData.wallets as Wallet[],
           transactions: (cloudData.transactions as Transaction[]) || [],
           activeWalletId: cloudData.activeWalletId || cloudData.wallets[0]?.id || 'all',
+          summaryWalletIds:
+            cloudData.summaryWalletIds || (cloudData.wallets as Wallet[]).map((w) => w.id),
         };
         setState(fullState);
         saveAppState(fullState);
@@ -261,14 +267,18 @@ export default function App() {
           wallets: cloudData.wallets as Wallet[],
           transactions: (cloudData.transactions as Transaction[]) || [],
           activeWalletId: cloudData.activeWalletId || cloudData.wallets[0]?.id || 'all',
+          summaryWalletIds:
+            cloudData.summaryWalletIds || (cloudData.wallets as Wallet[]).map((w) => w.id),
         };
         setState(fullState);
         saveAppState(fullState);
         showToast(`Đăng nhập thành công! Đã tải về ${fullState.transactions.length} giao dịch.`);
         setCloudSyncFeedback(`Đã tải về ${fullState.transactions.length} giao dịch từ máy chủ.`);
       } else {
-        // Tài khoản mới chưa có dữ liệu đám mây: đẩy dữ liệu hiện tại lên làm khởi điểm
-        await syncStateToFirestore(state);
+        // Chỉ đẩy dữ liệu lên làm khởi điểm nếu trên máy đang có dữ liệu thật (tránh ghi đè dữ liệu trống)
+        if (state.transactions && state.transactions.length > 0) {
+          await syncStateToFirestore(state);
+        }
         showToast(`Đăng nhập thành công! Đã kết nối tài khoản: ${userEmail}`);
         setCloudSyncFeedback(`Đã kết nối tài khoản: ${userEmail}`);
       }
@@ -466,8 +476,8 @@ export default function App() {
 
   // Calculate current balances
   const totalBalance = useMemo(() => {
-    return calculateTotalBalance(state.wallets, state.transactions);
-  }, [state.wallets, state.transactions]);
+    return calculateTotalBalance(state.wallets, state.transactions, state.summaryWalletIds);
+  }, [state.wallets, state.transactions, state.summaryWalletIds]);
 
   const activeWallet = useMemo(() => {
     if (selectedWalletId === 'all') return null;
@@ -482,8 +492,8 @@ export default function App() {
   // Current Month Stats
   const currentMonth = getCurrentMonthString();
   const currentStats = useMemo(() => {
-    return getMonthStats(currentMonth, selectedWalletId, state.transactions);
-  }, [currentMonth, selectedWalletId, state.transactions]);
+    return getMonthStats(currentMonth, selectedWalletId, state.transactions, state.summaryWalletIds);
+  }, [currentMonth, selectedWalletId, state.transactions, state.summaryWalletIds]);
 
   // ----------------------------------------------------
   // Handlers for Wallets
@@ -554,8 +564,8 @@ export default function App() {
   const handleAddQuickTransaction = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFormattedNumber(quickAmountDisplay);
-    if (amount <= 0) {
-      showToast('Vui lòng nhập số tiền lớn hơn 0');
+    if (amount === 0) {
+      showToast('Vui lòng nhập số tiền khác 0');
       return;
     }
 
@@ -759,7 +769,13 @@ export default function App() {
     const filteredExpenses = state.transactions.filter((t) => {
       if (t.type !== 'expense') return false;
       if (!t.date.startsWith(targetPrefix)) return false;
-      if (analysisWalletFilter !== 'all' && t.walletId !== analysisWalletFilter) return false;
+      if (analysisWalletFilter === 'all') {
+        if (state.summaryWalletIds && state.summaryWalletIds.length > 0) {
+          if (!state.summaryWalletIds.includes(t.walletId)) return false;
+        }
+      } else if (t.walletId !== analysisWalletFilter) {
+        return false;
+      }
       return true;
     });
 
@@ -772,7 +788,9 @@ export default function App() {
     // Collect all groups from relevant wallets
     const relevantWallets =
       analysisWalletFilter === 'all'
-        ? state.wallets
+        ? (state.summaryWalletIds && state.summaryWalletIds.length > 0
+            ? state.wallets.filter((w) => state.summaryWalletIds!.includes(w.id))
+            : state.wallets)
         : state.wallets.filter((w) => w.id === analysisWalletFilter);
 
     relevantWallets.forEach((w) => {
@@ -845,7 +863,13 @@ export default function App() {
 
       state.transactions.forEach((t) => {
         if (!t.date.startsWith(analysisMonth)) return;
-        if (analysisWalletFilter !== 'all' && t.walletId !== analysisWalletFilter) return;
+        if (analysisWalletFilter === 'all') {
+          if (state.summaryWalletIds && state.summaryWalletIds.length > 0) {
+            if (!state.summaryWalletIds.includes(t.walletId)) return;
+          }
+        } else if (t.walletId !== analysisWalletFilter) {
+          return;
+        }
 
         const day = parseInt(t.date.split('-')[2]);
         if (day >= 1 && day <= daysCount) {
@@ -863,7 +887,13 @@ export default function App() {
 
       state.transactions.forEach((t) => {
         if (!t.date.startsWith(analysisYear)) return;
-        if (analysisWalletFilter !== 'all' && t.walletId !== analysisWalletFilter) return;
+        if (analysisWalletFilter === 'all') {
+          if (state.summaryWalletIds && state.summaryWalletIds.length > 0) {
+            if (!state.summaryWalletIds.includes(t.walletId)) return;
+          }
+        } else if (t.walletId !== analysisWalletFilter) {
+          return;
+        }
 
         const monthIdx = parseInt(t.date.split('-')[1]) - 1;
         if (monthIdx >= 0 && monthIdx < 12) {
@@ -962,6 +992,33 @@ export default function App() {
             <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl tabular-nums">
               {new Date().toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })}
             </span>
+
+            {/* Quick Account Button */}
+            {cloudStatus.user ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors text-xs font-bold"
+                title="Tài khoản đã đăng nhập"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="max-w-[85px] truncate hidden sm:inline text-[11px]">
+                  {cloudStatus.user.displayName || cloudStatus.user.email?.split('@')[0]}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all text-xs font-bold active:scale-95"
+                title="Đăng nhập tài khoản"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Đăng nhập</span>
+              </button>
+            )}
+
             <button
               onClick={() => setIsTransferModalOpen(true)}
               className="p-2 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
@@ -996,7 +1053,9 @@ export default function App() {
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <p className="text-white/90 text-xs font-semibold tracking-wide">
                     {selectedWalletId === 'all'
-                      ? 'Tổng tài sản khả dụng (Tất cả ví)'
+                      ? state.summaryWalletIds && state.summaryWalletIds.length < state.wallets.length
+                        ? `Tổng tài sản Ví Tổng Hợp (${state.summaryWalletIds.length}/${state.wallets.length} ví)`
+                        : 'Tổng tài sản khả dụng (Ví Tổng Hợp)'
                       : `Số dư ví: ${activeWallet?.name}`}
                   </p>
                   <ChevronDown
@@ -1119,7 +1178,18 @@ export default function App() {
                       <Layers className="w-4 h-4" />
                     </div>
                     <div className="text-left">
-                      <p className="text-xs font-bold leading-tight">Ví Tổng Hợp</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold leading-tight">Ví Tổng Hợp</p>
+                        {state.summaryWalletIds && state.summaryWalletIds.length < state.wallets.length && (
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                              selectedWalletId === 'all' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'
+                            }`}
+                          >
+                            {state.summaryWalletIds.length}/{state.wallets.length}
+                          </span>
+                        )}
+                      </div>
                       <p
                         className={`text-[10px] font-medium tabular-nums ${
                           selectedWalletId === 'all' ? 'text-slate-300' : 'text-slate-500'
@@ -1331,28 +1401,57 @@ export default function App() {
                   </div>
                   <input
                     type="text"
-                    inputMode="numeric"
+                    inputMode="text"
                     placeholder="0"
                     value={quickAmountDisplay}
                     onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
-                      setQuickAmountDisplay(raw ? formatNumber(parseInt(raw, 10)) : '');
+                      const val = e.target.value.trim();
+                      const isNegative = val.startsWith('-');
+                      const digits = val.replace(/\D/g, '');
+                      if (!digits) {
+                        setQuickAmountDisplay(isNegative ? '-' : '');
+                        return;
+                      }
+                      const formatted = formatNumber(parseInt(digits, 10));
+                      setQuickAmountDisplay(isNegative ? `-${formatted}` : formatted);
                     }}
                     required
                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-2xl font-bold text-right text-slate-900 tabular-nums focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white"
                   />
                   {/* Quick Amount Suggestion Chips */}
-                  <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 custom-scrollbar">
+                  <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 custom-scrollbar items-center">
                     {[20000, 25000, 30000, 50000, 1000000, 4000000].map((amt) => (
                       <button
                         key={amt}
                         type="button"
-                        onClick={() => setQuickAmountDisplay(formatNumber(amt))}
+                        onClick={() => {
+                          setQuickAmountDisplay((prev) => {
+                            const isNeg = prev.startsWith('-');
+                            const formatted = formatNumber(amt);
+                            return isNeg ? `-${formatted}` : formatted;
+                          });
+                        }}
                         className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold text-slate-600 whitespace-nowrap transition-colors"
                       >
                         +{amt >= 1000000 ? `${amt / 1000000}Tr` : `${amt / 1000}k`}
                       </button>
                     ))}
+                    {/* Nút dấu - (Số âm) sau +4tr theo yêu cầu */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickAmountDisplay((prev) => {
+                          if (!prev || prev === '0') return '-';
+                          if (prev.startsWith('-')) return prev.slice(1);
+                          return `-${prev}`;
+                        });
+                      }}
+                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg text-[11px] font-black text-rose-600 whitespace-nowrap transition-all active:scale-95 flex items-center gap-1 shadow-2xs"
+                      title="Chuyển đổi số âm (-) / số dương (+)"
+                    >
+                      <span>−</span>
+                      <span className="text-[10px] font-bold uppercase tracking-tight">Âm</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1396,7 +1495,15 @@ export default function App() {
                 const monthTransactions = state.transactions
                   .filter((t) => {
                     if (!t.date.startsWith(currentMonth)) return false;
-                    if (selectedWalletId === 'all') return true;
+                    if (selectedWalletId === 'all') {
+                      if (state.summaryWalletIds && state.summaryWalletIds.length > 0) {
+                        return (
+                          state.summaryWalletIds.includes(t.walletId) ||
+                          (t.toWalletId ? state.summaryWalletIds.includes(t.toWalletId) : false)
+                        );
+                      }
+                      return true;
+                    }
                     return t.walletId === selectedWalletId || t.toWalletId === selectedWalletId;
                   })
                   .sort((a, b) => {
@@ -1427,8 +1534,24 @@ export default function App() {
                   let dayExpense = 0;
                   for (const it of items) {
                     if (selectedWalletId === 'all') {
-                      if (it.type === 'income') dayIncome += it.amount;
-                      else if (it.type === 'expense') dayExpense += it.amount;
+                      const isSourceInc =
+                        state.summaryWalletIds && state.summaryWalletIds.length > 0
+                          ? state.summaryWalletIds.includes(it.walletId)
+                          : true;
+                      const isTargetInc = it.toWalletId
+                        ? state.summaryWalletIds && state.summaryWalletIds.length > 0
+                          ? state.summaryWalletIds.includes(it.toWalletId)
+                          : true
+                        : false;
+
+                      if (it.type === 'income') {
+                        if (isSourceInc) dayIncome += it.amount;
+                      } else if (it.type === 'expense') {
+                        if (isSourceInc) dayExpense += it.amount;
+                      } else if (it.type === 'transfer') {
+                        if (isSourceInc && !isTargetInc) dayExpense += it.amount;
+                        else if (!isSourceInc && isTargetInc) dayIncome += it.amount;
+                      }
                     } else {
                       if (it.type === 'income' && it.walletId === selectedWalletId) dayIncome += it.amount;
                       else if (it.type === 'expense' && it.walletId === selectedWalletId) dayExpense += it.amount;
@@ -1521,19 +1644,33 @@ export default function App() {
                                     </p>
                                   </div>
 
-                                  {/* Bên phải: Số tiền, nút xóa (đã bỏ icon cây viết) */}
+                                   {/* Bên phải: Số tiền, nút xóa (đã bỏ icon cây viết) */}
                                   <div className="flex items-center gap-2.5 flex-shrink-0">
                                     <span
                                       className={`text-xs font-bold tabular-nums ${
                                         t.type === 'income'
-                                          ? 'text-emerald-600'
+                                          ? t.amount < 0
+                                            ? 'text-amber-600'
+                                            : 'text-emerald-600'
                                           : t.type === 'expense'
-                                          ? 'text-slate-800'
+                                          ? t.amount < 0
+                                            ? 'text-emerald-600'
+                                            : 'text-slate-800'
                                           : 'text-blue-600'
                                       }`}
                                     >
-                                      {t.type === 'income' ? '+' : t.type === 'expense' ? '-' : ''}
-                                      {formatVND(t.amount)}
+                                      {t.type === 'income'
+                                        ? t.amount < 0
+                                          ? '−'
+                                          : '+'
+                                        : t.type === 'expense'
+                                        ? t.amount < 0
+                                          ? '+'
+                                          : '−'
+                                        : t.amount < 0
+                                        ? '−'
+                                        : ''}
+                                      {formatVND(Math.abs(t.amount))}
                                     </span>
                                     <button
                                       type="button"
@@ -1906,14 +2043,18 @@ export default function App() {
                                             <span
                                               className={`text-xs font-bold tabular-nums ${
                                                 t.type === 'income'
-                                                  ? 'text-emerald-600'
+                                                  ? t.amount < 0 ? 'text-amber-600' : 'text-emerald-600'
                                                   : t.type === 'expense'
-                                                  ? 'text-slate-900'
+                                                  ? t.amount < 0 ? 'text-emerald-600' : 'text-slate-900'
                                                   : 'text-blue-600'
                                               }`}
                                             >
-                                              {t.type === 'income' ? '+' : t.type === 'expense' ? '-' : ''}
-                                              {formatVND(t.amount)}
+                                              {t.type === 'income'
+                                                ? (t.amount < 0 ? '−' : '+')
+                                                : t.type === 'expense'
+                                                ? (t.amount < 0 ? '+' : '−')
+                                                : (t.amount < 0 ? '−' : '')}
+                                              {formatVND(Math.abs(t.amount))}
                                             </span>
                                             <button
                                               type="button"
@@ -2076,8 +2217,34 @@ export default function App() {
                     Chọn ví để chỉnh:
                   </label>
                   <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                    {/* Nút Ví Tổng Hợp */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSettingsWalletId('all')}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                        selectedSettingsWalletId === 'all'
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-indigo-50/70 border-indigo-200/70 text-indigo-700 hover:bg-indigo-100/70'
+                      }`}
+                    >
+                      <span className="w-5 h-5 rounded-md flex items-center justify-center bg-white/20 text-white">
+                        <Layers className="w-3.5 h-3.5" />
+                      </span>
+                      <span>Ví Tổng Hợp</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                          selectedSettingsWalletId === 'all'
+                            ? 'bg-white/20 text-white'
+                            : 'bg-indigo-100 text-indigo-700'
+                        }`}
+                      >
+                        {(state.summaryWalletIds || state.wallets.map((w) => w.id)).length}/{state.wallets.length} ví
+                      </span>
+                    </button>
+
                     {state.wallets.map((w) => {
                       const isSelected =
+                        selectedSettingsWalletId !== 'all' &&
                         (selectedSettingsWalletId || state.wallets[0]?.id) === w.id;
                       return (
                         <button
@@ -2105,7 +2272,15 @@ export default function App() {
 
                 <CategoryManager
                   wallets={state.wallets}
-                  activeWalletId={selectedSettingsWalletId || state.wallets[0]?.id}
+                  activeWalletId={selectedSettingsWalletId || 'all'}
+                  summaryWalletIds={state.summaryWalletIds}
+                  onUpdateSummaryWalletIds={(newIds) => {
+                    setState((prev) => ({
+                      ...prev,
+                      summaryWalletIds: newIds,
+                    }));
+                  }}
+                  transactions={state.transactions}
                   onClose={() => setIsSettingsCategoryOpen(false)}
                   onUpdateWallet={(updated) => {
                     setState((prev) => ({
@@ -2409,8 +2584,8 @@ export default function App() {
                         {wallet?.name} · {t.date.split('-').reverse().join('/')}
                       </p>
                     </div>
-                    <span className="text-xs font-bold text-red-500 tabular-nums">
-                      -{formatVND(t.amount)}
+                    <span className={`text-xs font-bold tabular-nums ${t.amount < 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {t.amount < 0 ? '+' : '−'}{formatVND(Math.abs(t.amount))}
                     </span>
                   </div>
                 );

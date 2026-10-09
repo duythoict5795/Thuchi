@@ -46,16 +46,43 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormError(null);
-    const rawDigits = e.target.value.replace(/\D/g, '');
-    setAmountDisplay(formatNumber(rawDigits ? parseInt(rawDigits, 10) : 0));
+    const val = e.target.value.trim();
+    const isNegative = val.startsWith('-');
+    const rawDigits = val.replace(/\D/g, '');
+    if (!rawDigits) {
+      setAmountDisplay(isNegative ? '-' : '');
+      return;
+    }
+    const formatted = formatNumber(parseInt(rawDigits, 10));
+    setAmountDisplay(isNegative ? `-${formatted}` : formatted);
+  };
+
+  const toggleNegative = () => {
+    setFormError(null);
+    setAmountDisplay((prev) => {
+      if (!prev || prev === '0') return '-';
+      if (prev.startsWith('-')) {
+        return prev.slice(1);
+      }
+      return `-${prev}`;
+    });
+  };
+
+  const handleApplyChip = (amt: number) => {
+    setFormError(null);
+    setAmountDisplay((prev) => {
+      const isNeg = prev.startsWith('-');
+      const formatted = formatNumber(amt);
+      return isNeg ? `-${formatted}` : formatted;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     const amount = parseFormattedNumber(amountDisplay);
-    if (amount <= 0) {
-      setFormError('Vui lòng nhập số tiền lớn hơn 0');
+    if (amount === 0) {
+      setFormError('Vui lòng nhập số tiền khác 0');
       return;
     }
 
@@ -143,17 +170,27 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               required
             />
             {/* Quick Amount Suggestion Chips */}
-            <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 custom-scrollbar">
+            <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 custom-scrollbar items-center">
               {[20000, 25000, 30000, 50000, 1000000, 4000000].map((amt) => (
                 <button
                   key={amt}
                   type="button"
-                  onClick={() => setAmountDisplay(formatNumber(amt))}
+                  onClick={() => handleApplyChip(amt)}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold text-slate-600 whitespace-nowrap transition-colors"
                 >
                   +{amt >= 1000000 ? `${amt / 1000000}Tr` : `${amt / 1000}k`}
                 </button>
               ))}
+              {/* Nút dấu - (Số âm) sau +4tr */}
+              <button
+                type="button"
+                onClick={toggleNegative}
+                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg text-[11px] font-black text-rose-600 whitespace-nowrap transition-all active:scale-95 flex items-center gap-1 shadow-2xs"
+                title="Chuyển đổi số âm (-) / số dương (+)"
+              >
+                <span>−</span>
+                <span className="text-[10px] font-bold uppercase tracking-tight">Âm</span>
+              </button>
             </div>
           </div>
 

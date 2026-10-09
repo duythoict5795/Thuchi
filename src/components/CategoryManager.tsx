@@ -1,15 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, FolderPlus, Copy, Check, X, AlertCircle } from 'lucide-react';
-import { Wallet, ExpenseGroup } from '../types/finance';
+import {
+  Plus,
+  Trash2,
+  FolderPlus,
+  Copy,
+  Check,
+  X,
+  AlertCircle,
+  Layers,
+  CheckSquare,
+  Square,
+  Info,
+  CheckCheck,
+} from 'lucide-react';
+import { Wallet, ExpenseGroup, Transaction } from '../types/finance';
 import { WalletIcon } from './WalletIcon';
 import { getWalletGradient } from '../utils/gradients';
 import { ConfirmModal } from './ConfirmModal';
+import {
+  formatVND,
+  calculateWalletBalance,
+  calculateTotalBalance,
+  getMonthStats,
+  getCurrentMonthString,
+} from '../utils/storage';
 
 interface CategoryManagerProps {
   wallets: Wallet[];
   onUpdateWallet: (updatedWallet: Wallet) => void;
   activeWalletId?: string;
   onClose?: () => void;
+  summaryWalletIds?: string[];
+  onUpdateSummaryWalletIds?: (updatedIds: string[]) => void;
+  transactions?: Transaction[];
 }
 
 export const CategoryManager: React.FC<CategoryManagerProps> = ({
@@ -17,15 +40,50 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
   onUpdateWallet,
   activeWalletId,
   onClose,
+  summaryWalletIds,
+  onUpdateSummaryWalletIds,
+  transactions,
 }) => {
-  const [selectedWalletId, setSelectedWalletId] = useState<string>(activeWalletId || wallets[0]?.id || '');
+  const [selectedWalletId, setSelectedWalletId] = useState<string>(
+    activeWalletId || (wallets.length > 0 ? wallets[0]?.id : 'all')
+  );
 
   useEffect(() => {
     if (activeWalletId) {
       setSelectedWalletId(activeWalletId);
     }
   }, [activeWalletId]);
-  
+
+  const isSummaryMode = selectedWalletId === 'all';
+  const effectiveSummaryWalletIds = summaryWalletIds || wallets.map((w) => w.id);
+
+  // Summary live preview metrics
+  const summaryBalance = calculateTotalBalance(wallets, transactions || [], effectiveSummaryWalletIds);
+  const currentMonth = getCurrentMonthString();
+  const summaryStats = getMonthStats(currentMonth, 'all', transactions || [], effectiveSummaryWalletIds);
+
+  const toggleWalletInSummary = (walletId: string) => {
+    if (!onUpdateSummaryWalletIds) return;
+    const isCurrentlyIncluded = effectiveSummaryWalletIds.includes(walletId);
+    let next: string[];
+    if (isCurrentlyIncluded) {
+      next = effectiveSummaryWalletIds.filter((id) => id !== walletId);
+    } else {
+      next = [...effectiveSummaryWalletIds, walletId];
+    }
+    onUpdateSummaryWalletIds(next);
+  };
+
+  const handleSelectAllSummary = () => {
+    if (!onUpdateSummaryWalletIds) return;
+    onUpdateSummaryWalletIds(wallets.map((w) => w.id));
+  };
+
+  const handleDeselectAllSummary = () => {
+    if (!onUpdateSummaryWalletIds) return;
+    onUpdateSummaryWalletIds([]);
+  };
+
   // Modals for adding income cat, group, category to group
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
   const [newIncomeCat, setNewIncomeCat] = useState('');
@@ -212,19 +270,50 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
       {/* Wallet Selector Tabs */}
       <div>
         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-          Chọn ví để tùy chỉnh danh mục độc lập
+          Chọn ví để tùy chỉnh danh mục & chọn ví tính tổng hợp
         </label>
         <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+          {/* TAB VÍ TỔNG HỢP: Tùy chỉnh chọn ví để tính tổng hợp */}
+          <button
+            type="button"
+            onClick={() => setSelectedWalletId('all')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+              isSummaryMode
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                : 'bg-indigo-50/70 border-indigo-200/70 text-indigo-700 hover:bg-indigo-100/70'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-md flex items-center justify-center ${
+                isSummaryMode ? 'bg-white/20 text-white' : 'bg-indigo-600 text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+            </span>
+            <span>Ví Tổng Hợp</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                isSummaryMode
+                  ? 'bg-white/25 text-white'
+                  : 'bg-indigo-100 text-indigo-700'
+              }`}
+            >
+              {effectiveSummaryWalletIds.length}/{wallets.length} ví
+            </span>
+          </button>
+
+          {/* CÁC VÍ CỤ THỂ */}
           {wallets.map((w) => {
-            const isSelected = w.id === activeWallet.id;
+            const isSelected = selectedWalletId === w.id;
             return (
               <button
                 key={w.id}
+                type="button"
                 onClick={() => setSelectedWalletId(w.id)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
                   isSelected
-                    ? 'bg-white border-slate-300 shadow-sm text-slate-900'
-                    : 'bg-slate-50 border-slate-200/60 text-slate-500 hover:text-slate-800'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                    : 'bg-slate-50 border-slate-200/60 text-slate-600 hover:text-slate-800'
                 }`}
               >
                 <span
@@ -240,51 +329,247 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
         </div>
       </div>
 
-      {/* Wallet Category Banner */}
-      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-2xs"
-            style={{ background: getWalletGradient(activeWallet) }}
-          >
-            <WalletIcon icon={activeWallet.icon} className="w-5 h-5" />
+      {/* CHẾ ĐỘ 1: TÙY CHỈNH VÍ TỔNG HỢP (TÍCH CHỌN HOẶC LOẠI TRỪ CÁC VÍ) */}
+      {isSummaryMode ? (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Header Banner */}
+          <div className="p-4 bg-gradient-to-br from-indigo-50 via-white to-purple-50 rounded-2xl border border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
+                <Layers className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">Tùy Chỉnh Ví Tổng Hợp</h4>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-700">
+                    {effectiveSummaryWalletIds.length}/{wallets.length} ví được chọn
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Tích chọn ví nào thì tổng hợp sẽ tính cho ví đó. Bỏ tích ví nào thì loại ví đó ra khỏi số dư & báo cáo.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+              <button
+                type="button"
+                onClick={handleSelectAllSummary}
+                className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-indigo-600 rounded-xl text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1"
+                title="Tích chọn tất cả các ví"
+              >
+                <CheckCheck className="w-3.5 h-3.5" />
+                <span>Chọn tất cả</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDeselectAllSummary}
+                className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl text-[11px] font-bold transition-all shadow-2xs"
+                title="Bỏ tích toàn bộ ví"
+              >
+                <span>Bỏ chọn hết</span>
+              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl text-[11px] font-semibold transition-colors"
+                  title="Đóng tùy chỉnh"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Đóng</span>
+                </button>
+              )}
+            </div>
           </div>
-          <div>
-            <h4 className="text-sm font-bold text-slate-800">{activeWallet.name}</h4>
-            <p className="text-[11px] text-slate-500">
-              {activeWallet.expenseGroups.length} nhóm chi tiêu · {activeWallet.incomeCategories.length} nguồn thu
-            </p>
+
+          {/* Real-time Summary Preview Card */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 shadow-md space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                  Số dư Ví Tổng Hợp xem trước
+                </span>
+              </div>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-lg bg-white/10 text-emerald-300">
+                {effectiveSummaryWalletIds.length === 0
+                  ? 'Chưa chọn ví nào (0đ)'
+                  : `Đang tính ${effectiveSummaryWalletIds.length}/${wallets.length} ví`}
+              </span>
+            </div>
+
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight tabular-nums text-white">
+                {formatVND(summaryBalance)}
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/10 text-[11px]">
+              <div>
+                <p className="text-white/60 text-[10px] uppercase font-bold">Thu tháng này</p>
+                <p className="font-bold text-emerald-400 tabular-nums">+{formatVND(summaryStats.income)}</p>
+              </div>
+              <div>
+                <p className="text-white/60 text-[10px] uppercase font-bold">Chi tháng này</p>
+                <p className="font-bold text-red-400 tabular-nums">-{formatVND(summaryStats.expense)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-white/60 text-[10px] uppercase font-bold">Dòng tiền</p>
+                <p className={`font-bold tabular-nums ${summaryStats.net >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {summaryStats.net >= 0 ? '+' : ''}{formatVND(summaryStats.net)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Checklist of Wallets */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-100 space-y-3">
+            <div className="flex items-center justify-between pb-1">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Danh sách ví (Tích chọn để tính vào tổng hợp)
+              </span>
+              <span className="text-[11px] text-slate-400 font-medium">
+                Chạm vào ví để bật/tắt
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {wallets.map((w) => {
+                const isIncluded = effectiveSummaryWalletIds.includes(w.id);
+                const wBalance = calculateWalletBalance(w.id, wallets, transactions || []);
+                const txCount = (transactions || []).filter(
+                  (t) => t.walletId === w.id || t.toWalletId === w.id
+                ).length;
+
+                return (
+                  <div
+                    key={w.id}
+                    onClick={() => toggleWalletInSummary(w.id)}
+                    className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
+                      isIncluded
+                        ? 'bg-indigo-50/40 border-indigo-200/80 shadow-2xs hover:bg-indigo-50/70'
+                        : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100 hover:bg-slate-100/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Checkbox Icon */}
+                      <div className="shrink-0">
+                        {isIncluded ? (
+                          <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                            <Check className="w-4 h-4 stroke-[2.5]" />
+                          </div>
+                        ) : (
+                          <div className="w-6 h-6 rounded-lg border-2 border-slate-300 bg-white" />
+                        )}
+                      </div>
+
+                      {/* Wallet Icon */}
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs"
+                        style={{ background: getWalletGradient(w) }}
+                      >
+                        <WalletIcon icon={w.icon} className="w-5 h-5" />
+                      </div>
+
+                      {/* Wallet Name & Info */}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className={`text-xs font-bold truncate ${isIncluded ? 'text-slate-900' : 'text-slate-600'}`}>
+                            {w.name}
+                          </p>
+                          {isIncluded ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 shrink-0">
+                              ✓ Đang tính vào tổng hợp
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200 text-slate-600 shrink-0">
+                              ✕ Loại trừ ra
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          {txCount} giao dịch · {w.description || 'Ví chi tiêu'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Balance */}
+                    <div className="text-right shrink-0 ml-3">
+                      <p className={`text-xs font-bold tabular-nums ${isIncluded ? 'text-slate-900' : 'text-slate-500'}`}>
+                        {formatVND(wBalance)}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-medium">
+                        Số dư ví
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Informative Tip Box */}
+          <div className="p-3.5 bg-blue-50/80 border border-blue-200/70 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900">
+            <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-bold text-[11px] text-blue-950">Quy tắc tính toán Ví Tổng Hợp:</p>
+              <p className="text-[11px] text-blue-800 leading-relaxed">
+                • Khi xem <strong>Ví Tổng Hợp</strong> (Tổng tài sản trên Trang chủ & biểu đồ Phân tích), hệ thống chỉ tính tổng số dư và các giao dịch của những ví có dấu tích xanh <strong>✓ Đang tính vào tổng hợp</strong>.
+              </p>
+              <p className="text-[11px] text-blue-800 leading-relaxed">
+                • Những ví không tích chọn vẫn được lưu trữ, ghi chép và xem số dư độc lập bình thường mà không ảnh hưởng tới số liệu tổng hợp.
+              </p>
+            </div>
           </div>
         </div>
+      ) : activeWallet ? (
+        <>
+          {/* Wallet Category Banner */}
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-2xs"
+                style={{ background: getWalletGradient(activeWallet) }}
+              >
+                <WalletIcon icon={activeWallet.icon} className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-800">{activeWallet.name}</h4>
+                <p className="text-[11px] text-slate-500">
+                  {activeWallet.expenseGroups.length} nhóm chi tiêu · {activeWallet.incomeCategories.length} nguồn thu
+                </p>
+              </div>
+            </div>
 
-        <div className="flex items-center gap-2">
-          {wallets.length > 1 && (
-            <button
-              onClick={() => {
-                const other = wallets.find((w) => w.id !== activeWallet.id);
-                setCopySourceWalletId(other ? other.id : '');
-                setIsCopyModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-[11px] font-semibold transition-colors"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              <span>Sao chép mẫu</span>
-            </button>
-          )}
+            <div className="flex items-center gap-2">
+              {wallets.length > 1 && (
+                <button
+                  onClick={() => {
+                    const other = wallets.find((w) => w.id !== activeWallet.id);
+                    setCopySourceWalletId(other ? other.id : '');
+                    setIsCopyModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-[11px] font-semibold transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Sao chép mẫu</span>
+                </button>
+              )}
 
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl text-[11px] font-semibold transition-colors"
-              title="Đóng tùy chỉnh danh mục"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Đóng</span>
-            </button>
-          )}
-        </div>
-      </div>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl text-[11px] font-semibold transition-colors"
+                  title="Đóng tùy chỉnh danh mục"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Đóng</span>
+                </button>
+              )}
+            </div>
+          </div>
 
       {/* SECTION 1: Income Categories */}
       <div className="bg-white rounded-2xl p-4 border border-slate-100 space-y-3">
@@ -580,8 +865,10 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
           </div>
         </div>
       )}
+    </>
+  ) : null}
 
-      {/* Confirm Action Dialog */}
+  {/* Confirm Action Dialog */}
       <ConfirmModal
         isOpen={confirmDialog.isOpen}
         title={confirmDialog.title}

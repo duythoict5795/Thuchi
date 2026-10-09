@@ -429,6 +429,7 @@ export async function syncStateToFirestore(state: AppState): Promise<boolean> {
               wallets: state.wallets,
               transactions: state.transactions,
               activeWalletId: state.activeWalletId || '',
+              summaryWalletIds: state.summaryWalletIds || state.wallets.map((w) => w.id),
               updatedAt: new Date().toISOString(),
             },
             { merge: true }
@@ -487,6 +488,9 @@ export async function loadStateFromFirestore(): Promise<Partial<AppState> | null
         wallets: data.wallets as Wallet[],
         transactions: data.transactions as Transaction[],
         activeWalletId: data.activeWalletId || undefined,
+        summaryWalletIds: Array.isArray(data.summaryWalletIds)
+          ? (data.summaryWalletIds as string[])
+          : (data.wallets as Wallet[]).map((w) => w.id),
       };
     }
 

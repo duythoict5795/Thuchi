@@ -45,6 +45,10 @@
           "type": "string",
           "description": "ID of current active wallet"
         },
+        "summaryWalletIds": {
+          "type": "array",
+          "description": "List of wallet IDs included in the summary wallet calculations"
+        },
         "updatedAt": {
           "type": "string",
           "description": "Timestamp of the last update"
