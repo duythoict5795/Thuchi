@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Wallet as WalletIconLucide,
   Landmark,
@@ -76,6 +76,37 @@ import {
   CloudStatusPayload,
 } from './services/firebase';
 
+function getCleanDefaultState(): AppState {
+  const cleanDefaultWallet: Wallet = {
+    id: 'w-cash',
+    name: 'Tiền mặt',
+    initialBalance: 0,
+    color: 'indigo',
+    icon: 'wallet',
+    expenseGroups: [
+      {
+        id: 'group-essentials',
+        name: 'Chi tiêu thiết yếu',
+        color: 'indigo',
+        categories: ['Ăn uống', 'Di chuyển', 'Hóa đơn', 'Mua sắm', 'Nhà cửa'],
+      },
+      {
+        id: 'group-personal',
+        name: 'Cá nhân & Giải trí',
+        color: 'purple',
+        categories: ['Giải trí', 'Học tập', 'Sức khỏe', 'Làm đẹp'],
+      },
+    ],
+    incomeCategories: ['Lương', 'Thưởng', 'Kinh doanh', 'Đầu tư', 'Khác'],
+  };
+
+  return {
+    wallets: [cleanDefaultWallet],
+    transactions: [],
+    activeWalletId: 'w-cash',
+  };
+}
+
 export default function App() {
   const [state, setState] = useState<AppState>(loadAppState);
 
@@ -105,10 +136,21 @@ export default function App() {
   const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState(false);
   const [cloudSyncFeedback, setCloudSyncFeedback] = useState<string | null>(null);
 
+  // Lưu trữ UID của người dùng trước đó để phát hiện khi vừa đăng nhập
+  const prevUserUidRef = useRef<string | null>(null);
+
   // Initialize Cloud Database on boot and sync
   useEffect(() => {
     const unsub = subscribeCloudStatus((status) => {
+      const prevUid = prevUserUidRef.current;
+      const currentUid = status.user ? status.user.uid : null;
+      prevUserUidRef.current = currentUid;
       setCloudStatus(status);
+
+      // Nếu vừa đăng nhập thành công (chuyển từ null sang user): tự động tải dữ liệu về
+      if (!prevUid && currentUid && status.user) {
+        handleAuthSuccess(status.user.email || status.user.displayName || 'Tài khoản');
+      }
     });
 
     const unsubAuthErr = subscribeAuthError((errDetails) => {
@@ -121,22 +163,15 @@ export default function App() {
       try {
         const cloudData = await loadStateFromFirestore();
         if (cloudData && cloudData.wallets && cloudData.wallets.length > 0) {
-          setState((current) => {
-            if (
-              JSON.stringify(current) === JSON.stringify(DEFAULT_STATE) ||
-              (cloudData.transactions && cloudData.transactions.length >= current.transactions.length)
-            ) {
-              const merged: AppState = {
-                ...current,
-                wallets: (cloudData.wallets as Wallet[]) || current.wallets,
-                transactions: (cloudData.transactions as Transaction[]) || current.transactions,
-                activeWalletId: cloudData.activeWalletId || current.activeWalletId,
-              };
-              saveAppState(merged);
-              return merged;
-            }
-            return current;
-          });
+          const fullState: AppState = {
+            wallets: cloudData.wallets as Wallet[],
+            transactions: (cloudData.transactions as Transaction[]) || [],
+            activeWalletId: cloudData.activeWalletId || cloudData.wallets[0]?.id || 'w-cash',
+          };
+          setState(fullState);
+          saveAppState(fullState);
+          setSelectedWalletId(fullState.activeWalletId || fullState.wallets[0]?.id || 'all');
+          setCloudSyncFeedback(`Đã tự động tải về ${fullState.transactions.length} giao dịch từ máy chủ.`);
         }
       } catch (err) {
         console.warn('Initial cloud load info:', err);
@@ -246,11 +281,29 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    await logoutUser();
-    showToast('Đã đăng xuất tài khoản.');
-    setCloudSyncFeedback('Đã đăng xuất tài khoản. Ứng dụng tiếp tục lưu dữ liệu nội bộ trên máy.');
-    setTimeout(() => setCloudSyncFeedback(null), 3500);
+  // Đăng xuất: xóa sạch dữ liệu trên thiết bị, giữ an toàn dữ liệu trên đám mây
+  const handleLogout = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Đăng xuất tài khoản',
+      message: 'Khi đăng xuất, toàn bộ dữ liệu trên thiết bị này sẽ được dọn sạch về 1 ví trống (0đ) để bảo mật. Dữ liệu tài khoản của bạn trên đám mây vẫn an toàn tuyệt đối và sẽ được tự động tải về khi bạn đăng nhập lại.',
+      confirmText: 'Đăng xuất & Xóa dữ liệu máy',
+      variant: 'warning',
+      onConfirm: async () => {
+        // 1. Đăng xuất khỏi Firebase Auth
+        await logoutUser();
+
+        // 2. Xóa sạch dữ liệu trên thiết bị cục bộ (về 1 ví trống 0đ)
+        const clean = getCleanDefaultState();
+        setState(clean);
+        saveAppState(clean);
+        setSelectedWalletId('w-cash');
+
+        showToast('Đã đăng xuất & xóa sạch dữ liệu trên thiết bị!');
+        setCloudSyncFeedback('Đã đăng xuất. Dữ liệu trên thiết bị đã được làm sạch an toàn.');
+        setTimeout(() => setCloudSyncFeedback(null), 3500);
+      },
+    });
   };
 
   const handleGoogleLogin = async (forceRedirect = false) => {
@@ -645,35 +698,7 @@ export default function App() {
       confirmText: 'Xóa hết & Làm mới',
       variant: 'danger',
       onConfirm: async () => {
-        const cleanDefaultWallet: Wallet = {
-          id: 'w-cash',
-          name: 'Tiền mặt',
-          initialBalance: 0,
-          color: 'indigo',
-          icon: 'wallet',
-          expenseGroups: [
-            {
-              id: 'group-essentials',
-              name: 'Chi tiêu thiết yếu',
-              color: 'indigo',
-              categories: ['Ăn uống', 'Di chuyển', 'Hóa đơn', 'Mua sắm', 'Nhà cửa'],
-            },
-            {
-              id: 'group-personal',
-              name: 'Cá nhân & Giải trí',
-              color: 'purple',
-              categories: ['Giải trí', 'Học tập', 'Sức khỏe', 'Làm đẹp'],
-            },
-          ],
-          incomeCategories: ['Lương', 'Thưởng', 'Kinh doanh', 'Đầu tư', 'Khác'],
-        };
-
-        const cleanState: AppState = {
-          wallets: [cleanDefaultWallet],
-          transactions: [],
-          activeWalletId: 'w-cash',
-        };
-
+        const cleanState = getCleanDefaultState();
         setState(cleanState);
         saveAppState(cleanState);
         setSelectedWalletId('w-cash');
