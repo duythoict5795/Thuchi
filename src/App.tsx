@@ -61,6 +61,7 @@ import { getWalletGradient } from './utils/gradients';
 import { AppLogo } from './components/AppLogo';
 import { ConfirmModal } from './components/ConfirmModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
+import { AuthModal } from './components/AuthModal';
 import { loadAppStateFromDB } from './utils/db';
 import {
   initFirebaseService,
@@ -69,7 +70,7 @@ import {
   subscribeCloudStatus,
   subscribeAuthError,
   loginWithGoogle,
-  logoutGoogle,
+  logoutUser,
   parseAuthError,
   AuthErrorDetails,
   CloudStatusPayload,
@@ -152,11 +153,29 @@ export default function App() {
     setIsCloudSyncing(true);
     setCloudSyncFeedback(null);
     try {
-      const ok = await syncStateToFirestore(state);
-      if (ok) {
-        setCloudSyncFeedback('Đã đồng bộ lên CSDL Đám Mây thành công!');
+      // 1. Kiểm tra nếu có dữ liệu mới hơn trên cloud thì nạp về, ngược lại đẩy dữ liệu lên
+      const cloudData = await loadStateFromFirestore();
+      if (cloudData && cloudData.wallets && cloudData.wallets.length > 0) {
+        if (cloudData.transactions && cloudData.transactions.length >= state.transactions.length) {
+          const merged: AppState = {
+            wallets: cloudData.wallets as Wallet[],
+            transactions: cloudData.transactions as Transaction[],
+            activeWalletId: cloudData.activeWalletId || state.activeWalletId,
+          };
+          setState(merged);
+          saveAppState(merged);
+          setCloudSyncFeedback(`Đã đồng bộ 2 chiều (Đã nạp ${merged.transactions.length} giao dịch từ máy chủ)!`);
+        } else {
+          await syncStateToFirestore(state);
+          setCloudSyncFeedback('Đã đồng bộ lên CSDL Đám Mây thành công!');
+        }
       } else {
-        setCloudSyncFeedback('Không thể kết nối máy chủ ngoại tuyến. Vui lòng kiểm tra mạng.');
+        const ok = await syncStateToFirestore(state);
+        if (ok) {
+          setCloudSyncFeedback('Đã đồng bộ lên CSDL Đám Mây thành công!');
+        } else {
+          setCloudSyncFeedback('Không thể kết nối máy chủ ngoại tuyến. Vui lòng kiểm tra mạng.');
+        }
       }
     } catch {
       setCloudSyncFeedback('Lỗi đồng bộ cơ sở dữ liệu.');
@@ -166,14 +185,81 @@ export default function App() {
     }
   };
 
+  // Tải dữ liệu toàn bộ từ máy chủ đám mây về máy (Khắc phục lỗi không tải về dữ liệu sau khi đăng nhập)
+  const handlePullFromCloud = async () => {
+    setIsCloudSyncing(true);
+    setCloudSyncFeedback('Đang tải dữ liệu từ máy chủ về...');
+    try {
+      const cloudData = await loadStateFromFirestore();
+      if (cloudData && cloudData.wallets && cloudData.wallets.length > 0) {
+        const fullState: AppState = {
+          wallets: cloudData.wallets as Wallet[],
+          transactions: (cloudData.transactions as Transaction[]) || [],
+          activeWalletId: cloudData.activeWalletId || cloudData.wallets[0]?.id || 'all',
+        };
+        setState(fullState);
+        saveAppState(fullState);
+        showToast(`Đã tải về thành công ${fullState.transactions.length} giao dịch từ máy chủ!`);
+        setCloudSyncFeedback(`Đã tải về ${fullState.transactions.length} giao dịch.`);
+      } else {
+        showToast('Máy chủ chưa có dữ liệu nào được lưu trước đó.');
+        setCloudSyncFeedback('Máy chủ chưa có dữ liệu.');
+      }
+    } catch (err) {
+      console.error('Error pulling cloud data:', err);
+      showToast('Lỗi khi tải dữ liệu từ máy chủ.');
+      setCloudSyncFeedback('Lỗi kết nối máy chủ.');
+    } finally {
+      setIsCloudSyncing(false);
+      setTimeout(() => setCloudSyncFeedback(null), 3500);
+    }
+  };
+
+  // Xử lý sau khi đăng nhập thành công (tự động tải dữ liệu hàng ngày của tài khoản về ngay)
+  const handleAuthSuccess = async (userEmail: string) => {
+    setIsCloudSyncing(true);
+    setCloudSyncFeedback(`Đã đăng nhập: ${userEmail}. Đang tải dữ liệu hàng ngày...`);
+    try {
+      const cloudData = await loadStateFromFirestore();
+      if (cloudData && cloudData.wallets && cloudData.wallets.length > 0) {
+        const fullState: AppState = {
+          wallets: cloudData.wallets as Wallet[],
+          transactions: (cloudData.transactions as Transaction[]) || [],
+          activeWalletId: cloudData.activeWalletId || cloudData.wallets[0]?.id || 'all',
+        };
+        setState(fullState);
+        saveAppState(fullState);
+        showToast(`Đăng nhập thành công! Đã tải về ${fullState.transactions.length} giao dịch.`);
+        setCloudSyncFeedback(`Đã tải về ${fullState.transactions.length} giao dịch từ máy chủ.`);
+      } else {
+        // Tài khoản mới chưa có dữ liệu đám mây: đẩy dữ liệu hiện tại lên làm khởi điểm
+        await syncStateToFirestore(state);
+        showToast(`Đăng nhập thành công! Đã kết nối tài khoản: ${userEmail}`);
+        setCloudSyncFeedback(`Đã kết nối tài khoản: ${userEmail}`);
+      }
+    } catch (err) {
+      console.error('Lỗi tải dữ liệu sau đăng nhập:', err);
+      showToast(`Đăng nhập thành công: ${userEmail}`);
+    } finally {
+      setIsCloudSyncing(false);
+      setTimeout(() => setCloudSyncFeedback(null), 4000);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    showToast('Đã đăng xuất tài khoản.');
+    setCloudSyncFeedback('Đã đăng xuất tài khoản. Ứng dụng tiếp tục lưu dữ liệu nội bộ trên máy.');
+    setTimeout(() => setCloudSyncFeedback(null), 3500);
+  };
+
   const handleGoogleLogin = async (forceRedirect = false) => {
     setIsGoogleLoggingIn(true);
     setCloudSyncFeedback(null);
     try {
       const user = await loginWithGoogle(forceRedirect);
       if (user) {
-        setCloudSyncFeedback(`Đã kết nối tài khoản: ${user.displayName || user.email}`);
-        await syncStateToFirestore(state);
+        await handleAuthSuccess(user.email || user.displayName || 'Google User');
       }
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user') {
@@ -186,12 +272,6 @@ export default function App() {
       setIsGoogleLoggingIn(false);
       setTimeout(() => setCloudSyncFeedback(null), 4000);
     }
-  };
-
-  const handleGoogleLogout = async () => {
-    await logoutGoogle();
-    setCloudSyncFeedback('Đã đăng xuất tài khoản Google.');
-    setTimeout(() => setCloudSyncFeedback(null), 3500);
   };
 
   // Active navigation tab (ghi nhớ tab cuối cùng, không bị reset về trang chủ khi tải lại)
@@ -267,6 +347,9 @@ export default function App() {
   // Auth Error Details Modal (e.g. Safari popup blocked, GitHub Pages unauthorized domain)
   const [authErrorDetails, setAuthErrorDetails] = useState<AuthErrorDetails | null>(null);
   const [isAuthHelpModalOpen, setIsAuthHelpModalOpen] = useState(false);
+
+  // Email / Password Auth Modal (Dành cho Màn hình chính, Safari, không cần Google)
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -2096,48 +2179,52 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* Google Account Status & Login */}
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
+                {/* Account Status & Login / Register Modal */}
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs gap-2">
                   {cloudStatus.user ? (
                     <>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[11px] font-bold shrink-0">
-                          {cloudStatus.user.email?.charAt(0).toUpperCase() || 'U'}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-2xs">
+                          {cloudStatus.user.displayName?.charAt(0).toUpperCase() || cloudStatus.user.email?.charAt(0).toUpperCase() || 'U'}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[11px] font-bold text-slate-800 truncate">
+                          <p className="text-xs font-bold text-slate-800 truncate">
                             {cloudStatus.user.displayName || cloudStatus.user.email}
                           </p>
-                          <p className="text-[10px] text-slate-500 truncate">Tài khoản Google đã kết nối</p>
+                          <p className="text-[10px] text-emerald-600 font-semibold truncate flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                            Tài khoản đám mây đã kết nối
+                          </p>
                         </div>
                       </div>
                       <button
-                        onClick={handleGoogleLogout}
-                        className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                        onClick={handleLogout}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors shrink-0 border border-rose-100 bg-white"
                       >
-                        <LogOut className="w-3 h-3" />
+                        <LogOut className="w-3.5 h-3.5" />
                         Đăng xuất
                       </button>
                     </>
                   ) : (
                     <>
                       <div className="min-w-0">
-                        <p className="text-[11px] font-semibold text-slate-700">Đồng bộ theo thiết bị này</p>
-                        <p className="text-[10px] text-slate-400">Đăng nhập Google để đồng bộ đa thiết bị</p>
+                        <p className="text-xs font-bold text-slate-700">Đồng bộ theo thiết bị này</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          Đăng nhập/Tạo tài khoản để đồng bộ (iPhone & Safari)
+                        </p>
                       </div>
                       <button
-                        onClick={() => handleGoogleLogin(false)}
-                        disabled={isGoogleLoggingIn}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 font-bold text-xs shadow-2xs transition-colors shrink-0 disabled:opacity-50"
+                        onClick={() => setIsAuthModalOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all shrink-0 active:scale-[0.98]"
                       >
-                        <LogIn className="w-3.5 h-3.5 text-indigo-600" />
-                        {isGoogleLoggingIn ? 'Đang mở...' : 'Đăng nhập Google'}
+                        <LogIn className="w-3.5 h-3.5" />
+                        Đăng nhập / Đăng ký
                       </button>
                     </>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px] text-slate-500">
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px] text-slate-500 gap-2 flex-wrap">
                   <span>
                     Đồng bộ gần nhất:{' '}
                     <strong className="text-slate-700">
@@ -2146,14 +2233,27 @@ export default function App() {
                         : 'Vừa xong'}
                     </strong>
                   </span>
-                  <button
-                    onClick={handleManualCloudSync}
-                    disabled={isCloudSyncing}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold text-xs transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
-                    {isCloudSyncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePullFromCloud}
+                      disabled={isCloudSyncing}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors disabled:opacity-50"
+                      title="Tải toàn bộ giao dịch mới nhất từ máy chủ về"
+                    >
+                      <Download className="w-3 h-3 text-slate-600" />
+                      <span>Tải về từ Cloud</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleManualCloudSync}
+                      disabled={isCloudSyncing}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold text-[11px] transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+                      <span>{isCloudSyncing ? 'Đang xử lý...' : 'Đồng bộ ngay'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {cloudSyncFeedback && (
@@ -2320,6 +2420,13 @@ export default function App() {
         errorDetails={authErrorDetails}
         onClose={() => setIsAuthHelpModalOpen(false)}
         onRetryRedirect={() => handleGoogleLogin(true)}
+      />
+
+      {/* Email/Password Authentication Modal (Hoạt động mượt mà trên iPhone & Safari) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={handleAuthSuccess}
       />
     </div>
   );

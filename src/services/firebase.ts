@@ -5,6 +5,10 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendPasswordResetEmail,
   signOut,
   onAuthStateChanged,
   User,
@@ -246,18 +250,117 @@ export function parseAuthError(err: any): AuthErrorDetails {
     };
   }
 
+  if (code === 'auth/operation-not-allowed') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Chưa bật đăng nhập Email/Mật khẩu trên Firebase',
+      explanation: 'Phương thức xác thực bằng Email/Mật khẩu hiện chưa được kích hoạt trong dự án Firebase của bạn. Cần bật tính năng này để đăng ký tài khoản nội bộ.',
+      solutionSteps: [
+        'Nhấn vào nút "Bật Email/Password trong Firebase Console" bên dưới.',
+        'Tại trang Firebase Console mục Sign-in method, nhấn vào Email/Password.',
+        'Bật công tắc Enable đầu tiên và nhấn Save (Lưu).',
+        'Quay lại ứng dụng và tiến hành đăng ký/đăng nhập bình thường.',
+      ],
+      link: {
+        label: 'Mở Firebase Console Sign-in method',
+        url: `https://console.firebase.google.com/project/${projectId}/authentication/providers`,
+      },
+    };
+  }
+
+  if (code === 'auth/email-already-in-use') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Email này đã được đăng ký',
+      explanation: 'Địa chỉ email này đã có tài khoản trên hệ thống. Bạn có thể chuyển sang tab Đăng nhập để sử dụng.',
+      solutionSteps: ['Chuyển sang tab Đăng nhập và điền mật khẩu của bạn.'],
+    };
+  }
+
+  if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Sai email hoặc mật khẩu',
+      explanation: 'Email hoặc mật khẩu bạn vừa nhập không chính xác. Vui lòng kiểm tra lại.',
+      solutionSteps: [
+        'Kiểm tra lại phím Caps Lock hoặc gõ lại mật khẩu.',
+        'Nếu bạn quên mật khẩu, hãy bấm vào liên kết "Quên mật khẩu?" để nhận email đặt lại.',
+      ],
+    };
+  }
+
+  if (code === 'auth/user-not-found') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Không tìm thấy tài khoản',
+      explanation: 'Chưa có tài khoản nào được tạo với địa chỉ email này.',
+      solutionSteps: ['Vui lòng chuyển sang tab "Đăng ký mới" để tạo tài khoản trước.'],
+    };
+  }
+
+  if (code === 'auth/weak-password') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Mật khẩu quá ngắn',
+      explanation: 'Mật khẩu cần tối thiểu 6 ký tự để đáp ứng tiêu chuẩn bảo mật.',
+      solutionSteps: ['Vui lòng nhập mật khẩu có từ 6 ký tự trở lên.'],
+    };
+  }
+
+  if (code === 'auth/invalid-email') {
+    return {
+      code,
+      originalMessage: rawMessage,
+      title: 'Email không hợp lệ',
+      explanation: 'Địa chỉ email bạn nhập không đúng định dạng tiêu chuẩn (ví dụ: ten@gmail.com).',
+      solutionSteps: ['Vui lòng kiểm tra lại địa chỉ email.'],
+    };
+  }
+
   return {
     code,
     originalMessage: rawMessage,
-    title: 'Không thể đăng nhập tài khoản Google',
-    explanation: 'Quá trình đăng nhập qua Google gặp sự cố trên trình duyệt. Có thể do Safari chặn cookie bên thứ 3 hoặc tên miền chưa được cấp phép trong Firebase.',
+    title: 'Không thể xác thực tài khoản',
+    explanation: 'Quá trình đăng nhập hoặc đăng ký gặp sự cố. Vui lòng kiểm tra kết nối mạng và thử lại.',
     solutionSteps: [
-      'Đảm bảo tên miền đã được thêm vào Authorized domains trong Firebase Console.',
-      'Nếu dùng Safari trên iPhone: Vào Cài đặt > Safari > Tắt "Ngăn chặn theo dõi trên mọi trang web".',
-      'Ứng dụng vẫn tự động đồng bộ đám mây và lưu trữ ngoại tuyến an toàn mà không cần tài khoản.',
+      'Đảm bảo kết nối internet đang hoạt động bình thường.',
+      'Dữ liệu vẫn được tự động đồng bộ đám mây và lưu trữ ngoại tuyến an toàn theo thiết bị.',
     ],
     isSafariSpecific: true,
   };
+}
+
+// Email/Password Authentication (Hoạt động hoàn hảo trên Safari, Màn hình chính PWA, không phụ thuộc Google OAuth)
+export async function loginWithEmail(email: string, pass: string): Promise<User> {
+  const res = await signInWithEmailAndPassword(auth, email.trim(), pass);
+  currentUser = res.user;
+  isFirestoreOnline = true;
+  notifyStatus();
+  return res.user;
+}
+
+export async function registerWithEmail(email: string, pass: string, displayName?: string): Promise<User> {
+  const res = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+  if (displayName && displayName.trim()) {
+    try {
+      await updateProfile(res.user, { displayName: displayName.trim() });
+    } catch (e) {
+      console.warn('Could not set displayName:', e);
+    }
+  }
+  currentUser = res.user;
+  isFirestoreOnline = true;
+  notifyStatus();
+  return res.user;
+}
+
+export async function resetPasswordEmail(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email.trim());
 }
 
 // Google Login: Ưu tiên signInWithPopup vì hoạt động tức thì, không bị mất tab hay reload trang
@@ -289,16 +392,19 @@ export async function loginWithGoogle(forceRedirect = false): Promise<User | nul
   }
 }
 
-// Google Logout
-export async function logoutGoogle(): Promise<void> {
+// User Logout (Dùng cho cả Email và Google)
+export async function logoutUser(): Promise<void> {
   try {
     await signOut(auth);
     currentUser = null;
     notifyStatus();
   } catch (err) {
-    console.error('Google logout error:', err);
+    console.error('Logout error:', err);
   }
 }
+
+// Backwards compatibility alias
+export const logoutGoogle = logoutUser;
 
 // Synchronize AppState to Firestore
 let syncTimeout: any = null;
@@ -310,15 +416,16 @@ export async function syncStateToFirestore(state: AppState): Promise<boolean> {
       syncTimeout = setTimeout(async () => {
         try {
           const deviceId = getDeviceId();
-          // If logged in with Google, save to user document; otherwise save to device sync document
-          const docRef = currentUser
-            ? doc(db, 'users', currentUser.uid, 'finance', 'state')
+          const activeUser = auth.currentUser || currentUser;
+          // If logged in (with Email or Google), save to user document; otherwise save to device sync document
+          const docRef = activeUser
+            ? doc(db, 'users', activeUser.uid, 'finance', 'state')
             : doc(db, 'device_sync', deviceId, 'finance', 'state');
 
           await setDoc(
             docRef,
             {
-              ownerId: currentUser ? currentUser.uid : deviceId,
+              ownerId: activeUser ? activeUser.uid : deviceId,
               wallets: state.wallets,
               transactions: state.transactions,
               activeWalletId: state.activeWalletId || '',
@@ -351,11 +458,12 @@ export async function syncStateToFirestore(state: AppState): Promise<boolean> {
 export async function loadStateFromFirestore(): Promise<Partial<AppState> | null> {
   try {
     const deviceId = getDeviceId();
+    const activeUser = auth.currentUser || currentUser;
     let data: any = null;
 
-    // 1. Try loading from authenticated user if logged in
-    if (currentUser) {
-      const userDocRef = doc(db, 'users', currentUser.uid, 'finance', 'state');
+    // 1. Try loading from authenticated user if logged in (Email or Google)
+    if (activeUser) {
+      const userDocRef = doc(db, 'users', activeUser.uid, 'finance', 'state');
       const userSnap = await getDoc(userDocRef);
       if (userSnap.exists()) {
         data = userSnap.data();
