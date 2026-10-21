@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { formatVND } from '../utils/storage';
+import { Transaction } from '../types/finance';
 
 export interface DonutSlice {
   id: string;
@@ -7,6 +8,7 @@ export interface DonutSlice {
   value: number;
   color: string;
   sublabel?: string;
+  transactions?: Transaction[];
 }
 
 interface DonutChartProps {

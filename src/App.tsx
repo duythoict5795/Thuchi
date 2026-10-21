@@ -75,6 +75,7 @@ import {
   parseAuthError,
   AuthErrorDetails,
   CloudStatusPayload,
+  getCachedAuthUser,
 } from './services/firebase';
 
 function getCleanDefaultState(): AppState {
@@ -128,11 +129,14 @@ export default function App() {
   }, []);
 
   // Firebase Cloud Database connection state
-  const [cloudStatus, setCloudStatus] = useState<CloudStatusPayload>({
-    online: true,
-    user: null,
-    deviceId: '',
-    lastSynced: null,
+  const [cloudStatus, setCloudStatus] = useState<CloudStatusPayload>(() => {
+    const cached = typeof window !== 'undefined' ? getCachedAuthUser() : null;
+    return {
+      online: true,
+      user: cached ? ({ uid: cached.uid, email: cached.email, displayName: cached.displayName } as any) : null,
+      deviceId: '',
+      lastSynced: null,
+    };
   });
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState(false);
@@ -1831,15 +1835,45 @@ export default function App() {
                 slices={categoryGroupSlices}
                 centerLabel="Tổng chi"
                 onSliceClick={(slice) => {
-                  // Find all transactions in this group
+                  // Lọc chính xác các giao dịch thuộc nhóm danh mục được nhấn
                   const targetPrefix = analysisMode === 'month' ? analysisMonth : analysisYear;
-                  const matchingTxs = state.transactions.filter((t) => {
-                    if (t.type !== 'expense') return false;
-                    if (!t.date.startsWith(targetPrefix)) return false;
-                    if (analysisWalletFilter !== 'all' && t.walletId !== analysisWalletFilter)
-                      return false;
-                    return true;
-                  });
+                  const relevantWallets =
+                    analysisWalletFilter === 'all'
+                      ? (state.summaryWalletIds && state.summaryWalletIds.length > 0
+                          ? state.wallets.filter((w) => state.summaryWalletIds!.includes(w.id))
+                          : state.wallets)
+                      : state.wallets.filter((w) => w.id === analysisWalletFilter);
+
+                  const matchingTxs = state.transactions
+                    .filter((t) => {
+                      if (t.type !== 'expense') return false;
+                      if (!t.date.startsWith(targetPrefix)) return false;
+                      if (analysisWalletFilter === 'all') {
+                        if (state.summaryWalletIds && state.summaryWalletIds.length > 0) {
+                          if (!state.summaryWalletIds.includes(t.walletId)) return false;
+                        }
+                      } else if (t.walletId !== analysisWalletFilter) {
+                        return false;
+                      }
+
+                      // Kiểm tra xem danh mục của giao dịch có thuộc nhóm danh mục này không
+                      if (slice.label === 'Khác & Chưa phân loại') {
+                        const inAnyGroup = relevantWallets.some((w) =>
+                          w.expenseGroups.some((g) => g.categories.includes(t.category))
+                        );
+                        return !inAnyGroup;
+                      }
+
+                      return relevantWallets.some((w) => {
+                        const g = w.expenseGroups.find((grp) => grp.name === slice.label);
+                        return g && g.categories.includes(t.category);
+                      });
+                    })
+                    .sort((a, b) => {
+                      if (a.date !== b.date) return b.date.localeCompare(a.date);
+                      return (b.createdAt || 0) - (a.createdAt || 0);
+                    });
+
                   setSelectedGroupModal({
                     groupName: slice.label,
                     transactions: matchingTxs,
@@ -2169,20 +2203,24 @@ export default function App() {
                 })}
               </div>
 
-              {/* Nút bên dưới quản lý các ví: Nhấn vào là tùy chỉnh danh mục */}
+              {/* Nút bên dưới quản lý các ví: Nhấn vào để mở / ẩn tùy chỉnh danh mục */}
               <div className="pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsSettingsCategoryOpen(true);
-                    if (!selectedSettingsWalletId && state.wallets.length > 0) {
-                      setSelectedSettingsWalletId(state.wallets[0].id);
-                    }
-                  }}
-                  className="w-full py-3.5 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-[0.99]"
+                  onClick={() => setIsSettingsCategoryOpen((prev) => !prev)}
+                  className={`w-full py-3.5 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-[0.99] border ${
+                    isSettingsCategoryOpen
+                      ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200/80'
+                  }`}
                 >
                   <SlidersHorizontal className="w-4 h-4" />
-                  <span>Tùy Chỉnh Danh Mục</span>
+                  <span>{isSettingsCategoryOpen ? 'Ẩn Tùy Chỉnh Danh Mục' : 'Tùy Chỉnh Danh Mục'}</span>
+                  {isSettingsCategoryOpen ? (
+                    <ChevronUp className="w-4 h-4 text-slate-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-indigo-500" />
+                  )}
                 </button>
               </div>
             </div>
@@ -2190,89 +2228,9 @@ export default function App() {
             {/* SECTION 2: Tùy chỉnh danh mục theo ví (Chỉ hiện khi nhấn nút "Tùy chỉnh danh mục") */}
             {isSettingsCategoryOpen && (
               <div className="bg-white rounded-3xl p-5 shadow-2xs border border-indigo-100 space-y-4 animate-in fade-in duration-200">
-                {/* Nút ẩn bên trên tùy chỉnh danh mục các ví */}
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-800">
-                      Tùy Chỉnh Danh Mục Các Ví
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Chọn ví bên dưới để thiết lập nhóm chi và nguồn thu nhập riêng biệt
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsCategoryOpen(false)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
-                    title="Ẩn tùy chỉnh danh mục"
-                  >
-                    <ChevronUp className="w-4 h-4" />
-                    <span>Ẩn tùy chỉnh danh mục</span>
-                  </button>
-                </div>
-
-                {/* Người dùng chọn ví để chỉnh */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                    Chọn ví để chỉnh:
-                  </label>
-                  <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-                    {/* Nút Ví Tổng Hợp */}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSettingsWalletId('all')}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
-                        selectedSettingsWalletId === 'all'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-indigo-50/70 border-indigo-200/70 text-indigo-700 hover:bg-indigo-100/70'
-                      }`}
-                    >
-                      <span className="w-5 h-5 rounded-md flex items-center justify-center bg-white/20 text-white">
-                        <Layers className="w-3.5 h-3.5" />
-                      </span>
-                      <span>Ví Tổng Hợp</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                          selectedSettingsWalletId === 'all'
-                            ? 'bg-white/20 text-white'
-                            : 'bg-indigo-100 text-indigo-700'
-                        }`}
-                      >
-                        {(state.summaryWalletIds || state.wallets.map((w) => w.id)).length}/{state.wallets.length} ví
-                      </span>
-                    </button>
-
-                    {state.wallets.map((w) => {
-                      const isSelected =
-                        selectedSettingsWalletId !== 'all' &&
-                        (selectedSettingsWalletId || state.wallets[0]?.id) === w.id;
-                      return (
-                        <button
-                          key={w.id}
-                          type="button"
-                          onClick={() => setSelectedSettingsWalletId(w.id)}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
-                            isSelected
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span
-                            className="w-5 h-5 rounded-md flex items-center justify-center text-white"
-                            style={{ background: getWalletGradient(w) }}
-                          >
-                            <WalletIcon icon={w.icon} className="w-3 h-3" />
-                          </span>
-                          <span>{w.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 <CategoryManager
                   wallets={state.wallets}
-                  activeWalletId={selectedSettingsWalletId || 'all'}
+                  activeWalletId="all"
                   summaryWalletIds={state.summaryWalletIds}
                   onUpdateSummaryWalletIds={(newIds) => {
                     setState((prev) => ({
@@ -2556,8 +2514,13 @@ export default function App() {
                 <h4 className="text-sm font-bold text-slate-800">
                   Nhóm: {selectedGroupModal.groupName}
                 </h4>
-                <p className="text-xs text-slate-400">
-                  {selectedGroupModal.transactions.length} giao dịch chi tiết
+                <p className="text-xs text-slate-500 font-medium">
+                  {selectedGroupModal.transactions.length} giao dịch · Tổng chi:{' '}
+                  <strong className="text-red-500 font-bold">
+                    {formatVND(
+                      selectedGroupModal.transactions.reduce((sum, t) => sum + t.amount, 0)
+                    )}
+                  </strong>
                 </p>
               </div>
               <button
@@ -2569,7 +2532,12 @@ export default function App() {
             </div>
 
             <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2 pr-1">
-              {selectedGroupModal.transactions.map((t) => {
+              {selectedGroupModal.transactions.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs italic">
+                  Không có giao dịch nào trong nhóm này ở kỳ đã chọn.
+                </div>
+              ) : (
+                selectedGroupModal.transactions.map((t) => {
                 const wallet = state.wallets.find((w) => w.id === t.walletId);
                 return (
                   <div
@@ -2589,8 +2557,9 @@ export default function App() {
                     </span>
                   </div>
                 );
-              })}
-            </div>
+              })
+            )}
+          </div>
 
             <button
               onClick={() => setSelectedGroupModal(null)}

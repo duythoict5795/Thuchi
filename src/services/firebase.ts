@@ -1,6 +1,8 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
+  setPersistence,
+  browserLocalPersistence,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
@@ -29,6 +31,40 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Auth
 export const auth = getAuth(app);
+
+// Đảm bảo phiên đăng nhập duy trì vĩnh viễn trên Safari / iPhone Màn hình chính (PWA/Standalone)
+// Sử dụng browserLocalPersistence (localStorage) để không bị iOS xóa IndexedDB sau thời gian dài không dùng
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn('Could not set browserLocalPersistence on Firebase Auth:', err);
+  });
+}
+
+// Khôi phục bộ nhớ đệm tài khoản người dùng từ localStorage để tránh chớp màn hình khi mở lại app
+export function getCachedAuthUser(): { uid: string; email: string | null; displayName: string | null } | null {
+  try {
+    const raw = localStorage.getItem('qunlthuchi_auth_cached_user');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+export function saveCachedAuthUser(user: User | null) {
+  try {
+    if (user) {
+      localStorage.setItem(
+        'qunlthuchi_auth_cached_user',
+        JSON.stringify({
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+        })
+      );
+    } else {
+      localStorage.removeItem('qunlthuchi_auth_cached_user');
+    }
+  } catch {}
+}
 
 // Initialize Firestore (using specific database ID if specified)
 export const db: Firestore = firebaseConfig.firestoreDatabaseId
@@ -164,6 +200,9 @@ export function initFirebaseService(): Promise<User | null> {
     return new Promise<User | null>((resolve) => {
       onAuthStateChanged(auth, (user) => {
         currentUser = user;
+        if (user) {
+          saveCachedAuthUser(user);
+        }
         isFirestoreOnline = true;
         notifyStatus();
         resolve(user);
@@ -395,6 +434,7 @@ export async function loginWithGoogle(forceRedirect = false): Promise<User | nul
 // User Logout (Dùng cho cả Email và Google)
 export async function logoutUser(): Promise<void> {
   try {
+    saveCachedAuthUser(null);
     await signOut(auth);
     currentUser = null;
     notifyStatus();
